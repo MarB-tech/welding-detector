@@ -1,6 +1,7 @@
-opencv-python ==4.5.3.20210927
+opencv-python==4.5.3.20210927
 numpy==1.21.2
 fastapi==0.68.1
 uvicorn==0.15.0
 python-dotenv==0.19.2
+pydantic-settings==2.0.3
 pytest==6.2.5
