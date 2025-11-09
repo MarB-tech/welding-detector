@@ -1,4 +1,8 @@
-import cv2
+# to start camera server use:
+# uvicorn camera_server.stream:app --host 0.0.0.0 --port 8001
+
+
+import cv2 # type: ignore
 from app.core import settings
 
 

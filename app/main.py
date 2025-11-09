@@ -1,10 +1,12 @@
 from fastapi import FastAPI
-from app.api import stream
-from app.core import settings
+from app.api import router as api_router
+from app.core.config import settings
 
-app = FastAPI(
-    title=settings.APP_TITLE,
-    version=settings.APP_VERSION
-)
+app = FastAPI(title="Welding Vision API")
 
-app.include_router(stream.router)
+# Rejestracja endpointów
+app.include_router(api_router)
+
+@app.get("/")
+def root():
+    return {"status": "running", "camera_url": settings.CAMERA_SERVER_URL}

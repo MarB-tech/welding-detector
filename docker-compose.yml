@@ -1,0 +1,22 @@
+version: "3.9"
+
+services:
+  backend:
+    build: .
+    image: welding-detector:latest
+    container_name: welding_detector_api
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - APP_HOST=0.0.0.0
+      - APP_PORT=8000
+      # host.docker.internal wskazuje na hosta (Windows/Mac Docker Desktop)
+      - CAMERA_SERVER_URL=http://host.docker.internal:8001
+    restart: unless-stopped
+    volumes:
+      - ./app:/app/app
+    extra_hosts:
+      # Upewnij się że host.docker.internal działa
+      - "host.docker.internal:host-gateway"

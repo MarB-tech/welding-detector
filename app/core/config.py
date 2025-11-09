@@ -1,4 +1,4 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings # type: ignore
 from typing import Optional
 
 
@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     """
     # Konfiguracja kamery
     CAMERA_INDEX: int = 0
+    CAMERA_SERVER_URL: str = "http://host.docker.internal:8001"
     
     # Konfiguracja aplikacji
     APP_HOST: str = "0.0.0.0"

@@ -3,7 +3,7 @@ from fastapi.responses import StreamingResponse
 from app.services.camera_service import CameraService
 import time
 
-router = APIRouter()
+app = APIRouter()
 camera = CameraService()
 
 def generate_frames():
@@ -16,6 +16,6 @@ def generate_frames():
             # Jeśli nie ma klatki, czekaj chwilę
             time.sleep(0.1)
 
-@router.get("/stream")
+@app.get("/stream")
 def stream():
     return StreamingResponse(generate_frames(), media_type="multipart/x-mixed-replace; boundary=frame")
