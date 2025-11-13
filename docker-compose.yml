@@ -3,7 +3,7 @@ version: "3.9"
 services:
   backend:
     build: .
-    image: welding-detector:latest
+
     container_name: welding_detector_api
     ports:
       - "8000:8000"
@@ -20,3 +20,6 @@ services:
     extra_hosts:
       # Upewnij się że host.docker.internal działa
       - "host.docker.internal:host-gateway"
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+  camera_server:
+    command: uvicorn camera_server.stream:app --host 0.0.0.0 --port 8001
