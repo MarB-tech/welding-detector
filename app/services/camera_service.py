@@ -6,6 +6,7 @@ import cv2 # type: ignore
 import threading
 import time
 import logging
+from datetime import datetime
 from typing import Optional
 from app.core import settings
 
@@ -37,6 +38,7 @@ class CameraService:
         self.last_frame: Optional[bytes] = None  # Cached last good frame
         self.consecutive_failures = 0
         self.max_consecutive_failures = 5
+        self.is_recording = False  # Recording state
         
         # Camera settings for stability
         self.retry_delay = 0.1  # seconds
@@ -92,6 +94,19 @@ class CameraService:
         time.sleep(1.0)  # Wait before reconnecting
         return self._initialize_camera()
     
+    def _add_overlay(self, frame) -> None:
+        """Add timestamp and recording indicator to frame."""
+        h, w = frame.shape[:2]
+        
+        # Timestamp with milliseconds
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+        cv2.putText(frame, timestamp, (10, h - 10), cv2.FONT_HERSHEY_SIMPLEX, 
+                    0.5, (255, 255, 255), 1, cv2.LINE_AA)
+        
+        # Red recording dot
+        if self.is_recording:
+            cv2.circle(frame, (w - 20, 20), 8, (0, 0, 255), -1)
+    
     def get_frame(self) -> Optional[bytes]:
         """
         Get current frame from camera with retry logic and error handling.
@@ -121,6 +136,9 @@ class CameraService:
                         logger.warning(f"Failed to retrieve frame (attempt {attempt + 1}/{self.max_retries})")
                         time.sleep(self.retry_delay)
                         continue
+                    
+                    # Add timestamp and recording indicator
+                    self._add_overlay(frame)
                     
                     # Encode to JPEG
                     ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
@@ -177,7 +195,8 @@ class CameraService:
             "is_opened": self.cap.isOpened() if self.cap else False,
             "consecutive_failures": self.consecutive_failures,
             "has_cached_frame": self.last_frame is not None,
-            "is_healthy": self.is_healthy()
+            "is_healthy": self.is_healthy(),
+            "is_recording": self.is_recording
         }
         
         if self.cap and self.cap.isOpened():
@@ -189,6 +208,14 @@ class CameraService:
             })
         
         return stats
+    
+    def start_recording(self):
+        """Start recording indicator."""
+        self.is_recording = True
+    
+    def stop_recording(self):
+        """Stop recording indicator."""
+        self.is_recording = False
     
     def release(self):
         """Release camera resources."""

@@ -10,7 +10,7 @@ camera_service = RemoteCameraService()
 image_processing = ImageProcessingService()
 video_recorder = VideoRecorder()
 
-@router.get("/stream")
+@router.get("/stream", tags=["Camera"])
 async def stream():
     """
     MJPEG video stream z kamery
@@ -23,7 +23,7 @@ async def stream():
         media_type="multipart/x-mixed-replace; boundary=frame"
     )
 
-@router.get("/capture")
+@router.get("/capture", tags=["Camera"])
 async def capture():
     """
     Pojedyncza klatka z kamery jako JPEG
@@ -65,14 +65,14 @@ async def capture():
             media_type="text/plain"
         )
 
-@router.get("/health")
+@router.get("/health", tags=["Camera"])
 async def health():
     """Health check API i camera-server"""
     camera_status = await camera_service.health_check()
     return {"api": "healthy", "camera_service": camera_status}
 
 
-@router.get("/detect-edges")
+@router.get("/detect-edges", tags=["Image Processing"])
 async def detect_edges(threshold1: int = 50, threshold2: int = 150):
     """
     Prosta detekcja krawędzi - zwraca obraz z wykrytymi krawędziami
@@ -123,12 +123,14 @@ async def detect_edges(threshold1: int = 50, threshold2: int = 150):
         )
 
     
-@router.post("/start_recording")
+@router.post("/start_recording", tags=["Recording"])
 def start_recording():
+    camera_service.start_recording()
     video_recorder.start()
     return {"status": "recording started"}
 
-@router.post("/stop_recording")
+@router.post("/stop_recording", tags=["Recording"])
 def stop_recording():
+    camera_service.stop_recording()
     video_recorder.stop()
     return {"status": "recording stopped"}
