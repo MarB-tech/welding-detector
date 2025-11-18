@@ -15,7 +15,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-class CameraService:
+class Camera_USB_Service:
     """
     Thread-safe camera service with automatic reconnection and error handling.
     
@@ -28,12 +28,18 @@ class CameraService:
     """
     
     def __init__(self, camera_index=None):
-        """Initialize camera service with reconnection support."""
-        if camera_index is None:
+        """
+        Initialize camera service.
+        
+        Args:
+            camera_index: Index kamery USB (0, 1, 2...) lub None (remote mode - no hardware)
+        """
+        # Ustaw camera_index - jeśli None podany, użyj z settings (USB mode)
+        # Jeśli jawnie None (z child class), pozostaw None (remote mode)
+        if camera_index is None and not hasattr(self, '_remote_mode'):
             camera_index = settings.CAMERA_INDEX
         
         self.camera_index = camera_index
-        self.cap: Optional[cv2.VideoCapture] = None
         self.lock = threading.Lock()  # Thread-safety
         self.last_frame: Optional[bytes] = None  # Cached last good frame
         self.consecutive_failures = 0
@@ -44,17 +50,25 @@ class CameraService:
         self.retry_delay = 0.1  # seconds
         self.max_retries = 3
         
-        # Initialize camera
-        self._initialize_camera()
+        # Initialize camera hardware tylko jeśli camera_index podany
+        if camera_index is not None:
+            self.cap: Optional[cv2.VideoCapture] = None
+            self._initialize_camera()
+        else:
+            # Remote mode - no hardware initialization
+            self.cap = None
+            logger.info("📡 Camera service initialized in remote mode (no hardware)")
     
     def _initialize_camera(self) -> bool:
         """
-        Initialize camera with optimal settings for MSMF backend.
+        Initialize USB camera hardware with optimal settings.
         
         Returns:
             bool: True if camera initialized successfully
         """
         try:
+            logger.info(f"📹 Initializing USB camera {self.camera_index}")
+            
             # Release old capture if exists
             if self.cap is not None:
                 self.cap.release()
@@ -75,7 +89,7 @@ class CameraService:
             for _ in range(5):
                 self.cap.read()
             
-            logger.info(f"Camera {self.camera_index} initialized successfully")
+            logger.info(f"✅ Camera {self.camera_index} initialized successfully")
             self.consecutive_failures = 0
             return True
             

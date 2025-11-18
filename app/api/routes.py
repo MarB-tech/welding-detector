@@ -1,5 +1,7 @@
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse, Response
+from app.core.config import settings
+import httpx
 from app.services.remote_camera_service import RemoteCameraService
 from app.services.image_processing_service import ImageProcessingService
 from app.services.video_recorder_service import VideoRecorder
@@ -67,9 +69,28 @@ async def capture():
 
 @router.get("/health", tags=["Camera"])
 async def health():
-    """Health check API i camera-server"""
-    camera_status = await camera_service.health_check()
-    return {"api": "healthy", "camera_service": camera_status}
+    """
+    Health check - prosty status dla monitoringu
+    
+    Używane przez: Docker healthcheck, Kubernetes, monitoring tools.
+    Szybka odpowiedź: czy system działa?
+    """
+    is_healthy = camera_service.is_healthy()
+    return {
+        "status": "healthy" if is_healthy else "unhealthy",
+        "timestamp": __import__('datetime').datetime.now().isoformat()
+    }
+
+
+@router.get("/stats", tags=["Camera"])
+async def stats():
+    """
+    Szczegółowe statystyki kamery - dla admina i debugowania
+    
+    Zwraca pełne informacje: FPS, resolution, failures, recording status, etc.
+    Używane przez: admin dashboard, debugging, analiza wydajności.
+    """
+    return camera_service.get_stats()
 
 
 @router.get("/detect-edges", tags=["Image Processing"])
@@ -126,11 +147,19 @@ async def detect_edges(threshold1: int = 50, threshold2: int = 150):
 @router.post("/start_recording", tags=["Recording"])
 def start_recording():
     camera_service.start_recording()
-    video_recorder.start()
+    # video_recorder.start()
     return {"status": "recording started"}
 
 @router.post("/stop_recording", tags=["Recording"])
 def stop_recording():
     camera_service.stop_recording()
-    video_recorder.stop()
+    # video_recorder.stop()
     return {"status": "recording stopped"}
+
+# app/api/routes.py
+@router.post("/recording/start")
+async def start_recording():
+    """Proxy do camera-server."""
+    async with httpx.AsyncClient() as client:
+        response = await client.post(f"{settings.CAMERA_SERVER_URL}/recording/start")
+        return response.json()

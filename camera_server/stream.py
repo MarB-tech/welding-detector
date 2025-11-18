@@ -4,7 +4,7 @@
 
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse, Response
-from app.services.camera_service import CameraService
+from app.services.camera_USB_service import Camera_USB_Service
 import time
 
 app = FastAPI(
@@ -12,7 +12,7 @@ app = FastAPI(
     description="Lokalny serwer dostępu do kamery USB dla welding detector",
     version="1.0.0"
 )
-camera = CameraService()
+camera = Camera_USB_Service()
 
 def generate_frames():
     while True:
