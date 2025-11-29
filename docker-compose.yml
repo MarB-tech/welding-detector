@@ -17,6 +17,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./app:/app/app
+      - ./recordings:/app/recordings  # Nagrania dostępne na hoście
     extra_hosts:
       # Upewnij się że host.docker.internal działa
       - "host.docker.internal:host-gateway"
