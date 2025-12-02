@@ -21,25 +21,32 @@ recording_router = APIRouter(prefix="/recording", tags=["Recording"])
 # ============== CAMERA ==============
 
 @camera_router.get("/stream")
-async def stream_camera(
-    overlay: bool = Query(True),
+async def stream_camera(camera: RemoteCameraService = Depends(get_camera_service)):
+    """Proxy MJPEG stream - minimalne opóźnienie."""
+    headers = {"Cache-Control": "no-cache, no-store", "X-Accel-Buffering": "no"}
+    return StreamingResponse(
+        camera.stream_raw(),
+        media_type="multipart/x-mixed-replace; boundary=frame",
+        headers=headers
+    )
+
+
+@camera_router.get("/stream/overlay")
+async def stream_camera_overlay(
     camera: RemoteCameraService = Depends(get_camera_service),
     overlay_svc: FrameOverlayService = Depends(get_overlay_service),
     recorder: VideoRecorderService = Depends(get_recorder_service)
 ):
-    """Stream MJPEG z timestampem i wskaźnikiem REC."""
+    """Stream z overlay i nagrywaniem - wolniejszy ale z funkcjami."""
     async def generate():
         async for frame in camera.stream_frames():
-            if overlay:
-                frame = overlay_svc.apply_overlay_to_jpeg(frame)
-            
-            # Zapis do wideo gdy nagrywanie aktywne
+            frame = overlay_svc.apply_overlay_to_jpeg(frame)
             if recorder.is_recording:
                 recorder.add_frame(frame)
-            
             yield b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + frame + b'\r\n'
     
-    return StreamingResponse(generate(), media_type="multipart/x-mixed-replace; boundary=frame")
+    headers = {"Cache-Control": "no-cache, no-store", "X-Accel-Buffering": "no"}
+    return StreamingResponse(generate(), media_type="multipart/x-mixed-replace; boundary=frame", headers=headers)
 
 
 @camera_router.get("/capture")

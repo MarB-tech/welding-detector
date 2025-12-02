@@ -69,8 +69,8 @@ class FrameOverlayService:
                     dur_text = f"{int(duration // 60):02d}:{int(duration % 60):02d}"
                     cv2.putText(frame, dur_text, (w - 110, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
             
-            # Encode
-            _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            # Encode - wysoka jakość dla minimalnej utraty
+            _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 92])
             return buffer.tobytes()
             
         except Exception as e:

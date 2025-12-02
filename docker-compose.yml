@@ -1,9 +1,9 @@
 version: "3.9"
 
 services:
+  # ============== BACKEND API ==============
   backend:
     build: .
-
     container_name: welding_detector_api
     ports:
       - "8000:8000"
@@ -17,8 +17,30 @@ services:
     restart: unless-stopped
     volumes:
       - ./app:/app/app
-      - ./recordings:/app/recordings  # Nagrania dostępne na hoście
+      - ./recordings:/app/recordings
     extra_hosts:
-      # Upewnij się że host.docker.internal działa
       - "host.docker.internal:host-gateway"
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - welding-network
+
+  # ============== FRONTEND VUE ==============
+  frontend:
+    build: ./app_frontend
+    container_name: welding_detector_frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - VITE_API_URL=http://backend:8000
+    volumes:
+      - ./app_frontend:/app
+      - /app/node_modules  # Nie nadpisuj node_modules z hosta
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - welding-network
+
+networks:
+  welding-network:
+    driver: bridge
