@@ -50,6 +50,7 @@ class VideoRecorderService:
         self.writer: Optional[cv2.VideoWriter] = None
         self.current_file: Optional[Path] = None
         self.start_time: Optional[float] = None
+        self.start_datetime: Optional[datetime] = None  # Czas rozpoczęcia dla overlay
         self.frame_count = 0
         self.lock = threading.Lock()
         
@@ -61,10 +62,12 @@ class VideoRecorderService:
             if self.is_recording:
                 return self.current_file.name
             
-            filename = f"rec_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
+            now = datetime.now()
+            filename = f"rec_{now.strftime('%Y%m%d_%H%M%S')}.mp4"
             self.current_file = RECORDINGS_DIR / filename
             self.is_recording = True
             self.start_time = time.time()
+            self.start_datetime = now  # Zapisz datetime dla post-processingu
             self.frame_count = 0
             self.writer = None  # Lazy init przy pierwszej klatce
             
@@ -115,11 +118,13 @@ class VideoRecorderService:
                 "filename": self.current_file.name,
                 "duration_seconds": round(duration, 1),
                 "frames": self.frame_count,
-                "size_mb": round(size_mb, 2)
+                "size_mb": round(size_mb, 2),
+                "start_datetime": self.start_datetime.isoformat() if self.start_datetime else None
             }
             
             logger.info(f"⏹️ Recording stopped: {result}")
             self.current_file = None
+            self.start_datetime = None
             return result
     
     def list_files(self) -> list[dict]:

@@ -16,10 +16,10 @@ class HealthStatus(str, Enum):
 
 class CameraHealthResponse(BaseModel):
     status: HealthStatus
-    camera_url: str
-    response_code: Optional[int] = None
+    camera_index: Optional[int] = None
+    fps: Optional[float] = None
+    resolution: Optional[str] = None
     error: Optional[str] = None
-    has_cached_frame: bool = False
 
 
 class AppHealthResponse(BaseModel):
@@ -58,3 +58,13 @@ class RecordingFile(BaseModel):
 
 class RecordingListResponse(BaseModel):
     recordings: List[RecordingFile]
+
+
+# ============== CAMERA SETTINGS ==============
+
+class CameraSettingsRequest(BaseModel):
+    """Żądanie zmiany ustawień kamery."""
+    contrast: Optional[int] = None      # 0-255
+    fps: Optional[int] = None           # 15, 30, 60
+    jpeg_quality: Optional[int] = None  # 50-100
+    resolution: Optional[str] = None    # "HD" lub "FHD"
