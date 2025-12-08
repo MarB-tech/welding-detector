@@ -1,17 +1,12 @@
-"""
-API Routes - Endpointy kamery i nagrywania.
-"""
+"""API Routes - Camera, Recording, Edge Detection."""
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse, Response, FileResponse
-
 from datetime import datetime
 
-from app.services.remote_camera_service import RemoteCameraService, get_camera_service
+from app.services.camera_service import CameraService, get_camera_service
 from app.services.frame_overlay_service import FrameOverlayService, get_overlay_service
-from app.services.video_recorder_service import VideoRecorderService, get_recorder_service
 from app.services.video_overlay_service import VideoOverlayService, get_video_overlay_service
-from app.services.camera_settings_service import CameraSettingsService, get_camera_settings_service
 from app.api.models import (
     CameraHealthResponse, HealthStatus,
     RecordingStatusResponse, RecordingStartResponse, RecordingStopResponse, RecordingListResponse,
@@ -26,257 +21,114 @@ recording_router = APIRouter(prefix="/recording", tags=["Recording"])
 # ============== CAMERA ==============
 
 @camera_router.get("/stream")
-async def stream_camera(camera: RemoteCameraService = Depends(get_camera_service)):
-    """Proxy MJPEG stream - minimalne opóźnienie."""
-    headers = {"Cache-Control": "no-cache, no-store", "X-Accel-Buffering": "no"}
-    return StreamingResponse(
-        camera.stream_raw(),
-        media_type="multipart/x-mixed-replace; boundary=frame",
-        headers=headers
-    )
+async def stream_camera(camera: CameraService = Depends(get_camera_service)):
+    return StreamingResponse(camera.stream_raw(), media_type="multipart/x-mixed-replace; boundary=frame",
+                            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @camera_router.get("/stream/overlay")
-async def stream_camera_overlay(
-    camera: RemoteCameraService = Depends(get_camera_service),
-    overlay_svc: FrameOverlayService = Depends(get_overlay_service)
-):
-    """Stream z live overlay (timestamp, REC indicator) - do podglądu."""
-    async def generate():
+async def stream_camera_overlay(camera: CameraService = Depends(get_camera_service), overlay: FrameOverlayService = Depends(get_overlay_service)):
+    async def gen():
         async for frame in camera.stream_frames():
-            frame = overlay_svc.apply_overlay_to_jpeg(frame)
-            yield b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + frame + b'\r\n'
-    
-    headers = {"Cache-Control": "no-cache, no-store", "X-Accel-Buffering": "no"}
-    return StreamingResponse(generate(), media_type="multipart/x-mixed-replace; boundary=frame", headers=headers)
-
-
-@camera_router.get("/stream/recording")
-async def stream_camera_recording(
-    camera: RemoteCameraService = Depends(get_camera_service),
-    overlay_svc: FrameOverlayService = Depends(get_overlay_service),
-    recorder: VideoRecorderService = Depends(get_recorder_service)
-):
-    """Stream z nagrywaniem - overlay tylko na podgląd, nagranie czyste."""
-    async def generate():
-        async for frame in camera.stream_frames():
-            # Nagrywamy CZYSTĄ klatkę (bez overlay)
-            if recorder.is_recording:
-                recorder.add_frame(frame)
-            # Ale wyświetlamy z overlay (dla użytkownika)
-            display_frame = overlay_svc.apply_overlay_to_jpeg(frame)
-            yield b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + display_frame + b'\r\n'
-    
-    headers = {"Cache-Control": "no-cache, no-store", "X-Accel-Buffering": "no"}
-    return StreamingResponse(generate(), media_type="multipart/x-mixed-replace; boundary=frame", headers=headers)
+            yield b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + overlay.apply_overlay_to_jpeg(frame) + b'\r\n'
+    return StreamingResponse(gen(), media_type="multipart/x-mixed-replace; boundary=frame")
 
 
 @camera_router.get("/capture")
-async def capture_frame(
-    overlay: bool = Query(True),
-    camera: RemoteCameraService = Depends(get_camera_service),
-    overlay_svc: FrameOverlayService = Depends(get_overlay_service)
-):
-    """Pojedyncza klatka JPEG z timestampem."""
+async def capture_frame(overlay: bool = True, camera: CameraService = Depends(get_camera_service), overlay_svc: FrameOverlayService = Depends(get_overlay_service)):
     frame = await camera.get_single_frame()
     if not frame:
-        raise HTTPException(503, "Nie można pobrać klatki z kamery")
-    
-    if overlay:
-        frame = overlay_svc.apply_overlay_to_jpeg(frame)
-    
-    return Response(frame, media_type="image/jpeg")
+        raise HTTPException(503, "Camera unavailable")
+    return Response(overlay_svc.apply_overlay_to_jpeg(frame) if overlay else frame, media_type="image/jpeg")
 
 
 @camera_router.get("/health", response_model=CameraHealthResponse)
-async def camera_health(camera: RemoteCameraService = Depends(get_camera_service)):
-    """Status kamery USB."""
+async def camera_health(camera: CameraService = Depends(get_camera_service)):
     data = await camera.health_check()
-    return CameraHealthResponse(
-        status=HealthStatus(data.get("status", "disconnected")),
-        camera_index=data.get("camera_index"),
-        fps=data.get("fps"),
-        resolution=data.get("resolution"),
-        error=data.get("error")
-    )
+    return CameraHealthResponse(status=HealthStatus(data.get("status", "disconnected")), **{k: data.get(k) for k in ["camera_index", "fps", "resolution", "is_recording"]})
 
 
 @camera_router.get("/monochrome")
-async def get_monochrome(camera: RemoteCameraService = Depends(get_camera_service)):
-    """Pobierz status trybu monochromatycznego."""
+async def get_monochrome(camera: CameraService = Depends(get_camera_service)):
     return {"monochrome": camera.monochrome}
 
 
 @camera_router.post("/monochrome")
-async def set_monochrome(
-    enabled: bool = Query(..., description="Włącz/wyłącz tryb monochromatyczny"),
-    camera: RemoteCameraService = Depends(get_camera_service)
-):
-    """Przełącz tryb monochromatyczny (grayscale)."""
+async def set_monochrome(enabled: bool = Query(...), camera: CameraService = Depends(get_camera_service)):
     camera.monochrome = enabled
-    return {"monochrome": camera.monochrome, "status": "ok"}
+    return {"monochrome": camera.monochrome}
 
-
-# ============== CAMERA SETTINGS ==============
 
 @camera_router.get("/settings")
-async def get_camera_settings(
-    settings_svc: CameraSettingsService = Depends(get_camera_settings_service)
-):
-    """Pobierz aktualne ustawienia kamery (contrast, fps, jpeg_quality)."""
-    return settings_svc.get_current_settings()
+async def get_settings(camera: CameraService = Depends(get_camera_service)):
+    return camera.get_settings()
 
 
 @camera_router.put("/settings")
-async def update_camera_settings(
-    request: CameraSettingsRequest,
-    settings_svc: CameraSettingsService = Depends(get_camera_settings_service)
-):
-    """
-    Zmień ustawienia kamery.
-    
-    Obsługiwane parametry:
-    - contrast: 0-255
-    - fps: 15, 30, 60
-    - jpeg_quality: 50-100
-    """
-    return settings_svc.apply_settings(request.model_dump(exclude_none=True))
+async def update_settings(req: CameraSettingsRequest, camera: CameraService = Depends(get_camera_service)):
+    return camera.apply_settings(**req.model_dump(exclude_none=True))
 
 
-# ============== EDGE DETECTION (placeholder) ==============
+# ============== EDGE ==============
 
 @edge_router.get("/detect")
 async def detect_edge():
-    """Detekcja krawędzi - coming soon."""
     return {"status": "not_implemented"}
 
 
 # ============== RECORDING ==============
 
 @recording_router.get("/status", response_model=RecordingStatusResponse)
-async def recording_status(
-    overlay_svc: FrameOverlayService = Depends(get_overlay_service),
-    recorder: VideoRecorderService = Depends(get_recorder_service)
-):
-    """Status nagrywania."""
-    return RecordingStatusResponse(
-        is_recording=overlay_svc.is_recording,
-        duration_seconds=overlay_svc.get_recording_duration(),
-        frames=recorder.frame_count if recorder.is_recording else 0
-    )
+async def recording_status(camera: CameraService = Depends(get_camera_service)):
+    return RecordingStatusResponse(is_recording=camera.is_recording, duration_seconds=camera.get_recording_duration(), frames=camera._frame_count)
 
 
 @recording_router.post("/start", response_model=RecordingStartResponse)
-async def start_recording(
-    overlay_svc: FrameOverlayService = Depends(get_overlay_service),
-    recorder: VideoRecorderService = Depends(get_recorder_service)
-):
-    """Rozpocznij nagrywanie."""
-    if overlay_svc.is_recording:
-        raise HTTPException(400, "Nagrywanie już aktywne")
-    
-    filename = recorder.start()
-    overlay_svc.start_recording()
-    return RecordingStartResponse(status="started", filename=filename)
+async def start_recording(camera: CameraService = Depends(get_camera_service), overlay: FrameOverlayService = Depends(get_overlay_service)):
+    if camera.is_recording:
+        raise HTTPException(400, "Already recording")
+    overlay.start_recording()
+    return RecordingStartResponse(status="started", filename=camera.start_recording())
 
 
 @recording_router.post("/stop", response_model=RecordingStopResponse)
-async def stop_recording(
-    overlay_svc: FrameOverlayService = Depends(get_overlay_service),
-    recorder: VideoRecorderService = Depends(get_recorder_service)
-):
-    """Zatrzymaj nagrywanie."""
-    if not overlay_svc.is_recording:
-        raise HTTPException(400, "Nagrywanie nie jest aktywne")
-    
-    result = recorder.stop()
-    overlay_svc.stop_recording()
-    return RecordingStopResponse(status="stopped", **result)
+async def stop_recording(camera: CameraService = Depends(get_camera_service), overlay: FrameOverlayService = Depends(get_overlay_service)):
+    if not camera.is_recording:
+        raise HTTPException(400, "Not recording")
+    overlay.stop_recording()
+    return RecordingStopResponse(status="stopped", **camera.stop_recording())
 
 
 @recording_router.get("/list", response_model=RecordingListResponse)
-async def list_recordings(recorder: VideoRecorderService = Depends(get_recorder_service)):
-    """Lista nagrań."""
-    return RecordingListResponse(recordings=recorder.list_files())
+async def list_recordings(camera: CameraService = Depends(get_camera_service)):
+    return RecordingListResponse(recordings=camera.list_recordings())
 
 
 @recording_router.get("/download/{filename}")
-async def download_recording(
-    filename: str,
-    recorder: VideoRecorderService = Depends(get_recorder_service)
-):
-    """Pobierz nagranie na komputer."""
-    path = recorder.get_path(filename)
+async def download_recording(filename: str, camera: CameraService = Depends(get_camera_service)):
+    path = camera.get_recording_path(filename)
     if not path:
-        raise HTTPException(404, "Plik nie istnieje")
+        raise HTTPException(404, "File not found")
     return FileResponse(path, filename=filename, media_type="video/mp4")
 
 
 @recording_router.delete("/{filename}")
-async def delete_recording(
-    filename: str,
-    recorder: VideoRecorderService = Depends(get_recorder_service)
-):
-    """Usuń nagranie."""
-    path = recorder.get_path(filename)
-    if not path:
-        raise HTTPException(404, "Plik nie istnieje")
-    path.unlink()
+async def delete_recording(filename: str, camera: CameraService = Depends(get_camera_service)):
+    if not camera.delete_recording(filename):
+        raise HTTPException(404, "File not found")
     return {"status": "deleted", "filename": filename}
 
 
 @recording_router.post("/{filename}/apply-overlay")
-async def apply_overlay_to_recording(
-    filename: str,
-    start_time: str = None,
-    recorder: VideoRecorderService = Depends(get_recorder_service),
-    overlay_svc: VideoOverlayService = Depends(get_video_overlay_service)
-):
-    """
-    Nakłada timestamp overlay na nagrane wideo (w tle).
-    Tworzy nowy plik z sufiksem _overlay.
-    """
-    path = recorder.get_path(filename)
-    if not path:
-        raise HTTPException(404, "Plik nie istnieje")
-    
-    # Parse start_time jeśli podany
-    parsed_time = None
-    if start_time:
-        try:
-            parsed_time = datetime.fromisoformat(start_time)
-        except ValueError:
-            raise HTTPException(400, "Nieprawidłowy format start_time (użyj ISO 8601)")
-    
-    started = overlay_svc.process_video(filename, parsed_time)
-    if not started:
-        status = overlay_svc.get_status(filename)
-        if status:
-            return {"status": "already_processing", "details": status}
-        raise HTTPException(500, "Nie można rozpocząć przetwarzania")
-    
-    return {
-        "status": "processing_started",
-        "filename": filename,
-        "message": "Overlay będzie nałożony w tle. Sprawdź status przez GET /recording/{filename}/overlay-status"
-    }
+async def apply_overlay(filename: str, start_time: str = None, camera: CameraService = Depends(get_camera_service), overlay: VideoOverlayService = Depends(get_video_overlay_service)):
+    if not camera.get_recording_path(filename):
+        raise HTTPException(404, "File not found")
+    parsed_time = datetime.fromisoformat(start_time) if start_time else None
+    if not overlay.process_video(filename, parsed_time):
+        return {"status": "already_processing"}
+    return {"status": "processing_started", "filename": filename}
 
 
 @recording_router.get("/{filename}/overlay-status")
-async def get_overlay_status(
-    filename: str,
-    overlay_svc: VideoOverlayService = Depends(get_video_overlay_service)
-):
-    """Sprawdź status nakładania overlay na wideo."""
-    status = overlay_svc.get_status(filename)
-    if not status:
-        return {"status": "not_found", "message": "Brak przetwarzania dla tego pliku"}
-    return status
-
-
-@recording_router.get("/overlay-jobs")
-async def get_all_overlay_jobs(
-    overlay_svc: VideoOverlayService = Depends(get_video_overlay_service)
-):
-    """Lista wszystkich zadań nakładania overlay."""
-    return overlay_svc.get_all_status()
+async def overlay_status(filename: str, overlay: VideoOverlayService = Depends(get_video_overlay_service)):
+    return overlay.get_status(filename) or {"status": "not_found"}

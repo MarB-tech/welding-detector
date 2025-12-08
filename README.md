@@ -1,377 +1,241 @@
 # 🎥 Welding Detector
 
-System detekcji wad w procesie spawania z wykorzystaniem kamery USB i FastAPI.
+System wizyjny do monitorowania procesu spawania laserowego z kamerą USB.
 
 ## 📋 Opis
 
-Welding Detector to mikroserwisowa aplikacja do monitorowania procesu spawania w czasie rzeczywistym. System składa się z dwóch głównych komponentów:
+Welding Detector to aplikacja do podglądu i nagrywania procesu spawania w czasie rzeczywistym. 
 
-- **Camera-Server** (localhost) - bezpośredni dostęp do kamery USB z użyciem OpenCV
-- **Backend API** (Docker) - API do streamingu wideo i przetwarzania obrazu
+**Główne funkcje:**
+- 📹 Live streaming MJPEG z niskim opóźnieniem
+- 🎬 Nagrywanie wideo do MP4 z prawidłową prędkością odtwarzania
+- ⚙️ Ustawienia kamery (rozdzielczość HD/FHD, jakość JPEG)
+- ⬛ Tryb monochromatyczny
 
 ## 🏗️ Architektura
 
 ```
-┌─────────────────┐
-│  Camera (USB)   │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────────────┐
-│   Camera-Server         │  Port 8001 (localhost)
-│   - opencv-python       │
-│   - FastAPI             │
-│   Endpoints:            │
-│   • GET /stream         │  MJPEG stream
-│   • GET /capture        │  Single JPEG frame
-│   • GET /health         │  Health check
-└───────────┬─────────────┘
-            │ HTTP
-            ▼
-┌─────────────────────────┐
-│   Backend API (Docker)  │  Port 8000
-│   - FastAPI             │
-│   - httpx (no OpenCV!)  │
-│   Endpoints:            │
-│   • GET /stream         │  Proxy MJPEG
-│   • GET /capture        │  Extract JPEG from stream
-│   • GET /health         │  Status check
-│   • GET /docs           │  API documentation
-└─────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           Camera Backend                                 │
+│  MSMF (Media Foundation) → DirectShow → Auto (fallback chain)          │
+│  Format: MJPG (hardware compressed) dla szybszego transferu USB         │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      CameraService (Unified)                             │
+│  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐      │
+│  │ Background      │    │ Frame Buffer    │    │ MP4 Recording   │      │
+│  │ Capture Thread  │───▶│ JPEG Encoding   │───▶│ + Re-encoding   │      │
+│  │ (continuous)    │    │ (thread-safe)   │    │ (correct FPS)   │      │
+│  └─────────────────┘    └─────────────────┘    └─────────────────┘      │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+                    ┌───────────────┼───────────────┐
+                    ▼               ▼               ▼
+            ┌─────────────┐ ┌─────────────┐ ┌─────────────────────┐
+            │ /camera/    │ │ /camera/    │ │ /recording/start    │
+            │ stream      │ │ capture     │ │ /recording/stop     │
+            │ (MJPEG)     │ │ (JPEG)      │ │ (MP4 recording)     │
+            └─────────────┘ └─────────────┘ └─────────────────────┘
 ```
 
-## ✨ Główne funkcje
+## 🔬 Mechanika działania
 
-### 1. **Video Streaming (`/stream`)**
-- MJPEG stream w czasie rzeczywistym
-- Proxy bez dekodowania (działa w Docker)
-- Format: `multipart/x-mixed-replace`
+### 1. Inicjalizacja kamery
 
-### 2. **Frame Capture (`/capture`)** 🆕
-- Pojedyncza klatka jako JPEG
-- **Parsuje MJPEG bez OpenCV** - działa w Docker!
-- Idealny do analizy obrazu i ML
+```python
+# Próba uruchomienia z różnymi backendami (w kolejności)
+backends = [
+    MSMF,        # Media Foundation - najszybszy na Windows
+    DirectShow,  # Klasyczny Windows API
+    Auto         # Automatyczny wybór
+]
 
-### 3. **Health Monitoring (`/health`)**
-- Status API i camera-server
-- Informacje o połączeniu z kamerą
+# Optymalizacje
+cap.set(CAP_PROP_BUFFERSIZE, 1)    # Minimalny bufor = mniejsze opóźnienie
+cap.set(CAP_PROP_FOURCC, 'MJPG')   # Sprzętowa kompresja MJPEG
+```
 
-## 🚀 Instalacja i uruchomienie
+### 2. Pomiar rzeczywistego FPS
 
-### Wymagania
-- Python 3.11+
-- Kamera USB
-- Docker Desktop (opcjonalnie)
+**Problem:** Kamera może nie wspierać żądanego FPS (np. żądamy 60, dostajemy 30).
 
-### 1. Instalacja zależności
+**Rozwiązanie:** Mierzymy rzeczywisty FPS przez timing:
+```python
+def _measure_actual_fps():
+    # Warmup - pierwsze klatki są niestabilne
+    for _ in range(5):
+        cap.read()
+    
+    # Pomiar: ile klatek w jakim czasie
+    start = time.perf_counter()
+    frames = 0
+    for _ in range(60):
+        if cap.read()[0]:
+            frames += 1
+    elapsed = time.perf_counter() - start
+    
+    actual_fps = frames / elapsed  # Np. 60 klatek / 2s = 30 FPS
+```
+
+### 3. Background Capture Thread
+
+Osobny wątek przechwytuje klatki tak szybko jak kamera je dostarcza:
+
+```python
+def _capture_loop():
+    while running:
+        ret, frame = cap.read()  # Blokujące - czeka na klatkę
+        
+        # Opcjonalnie: konwersja do grayscale
+        if monochrome:
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        
+        # Kodowanie do JPEG
+        _, buf = cv2.imencode('.jpg', frame, [IMWRITE_JPEG_QUALITY, 95])
+        
+        # Thread-safe zapis do bufora
+        with lock:
+            last_frame = buf.tobytes()
+            if recording:
+                video_writer.write(frame)
+```
+
+### 4. Nagrywanie z prawidłowym FPS
+
+**Problem:** Kamera deklaruje 60 FPS, ale realnie daje np. 17 FPS przez obciążenie systemu. 
+Video nagrane z FPS=60 będzie odtwarzane 4x szybciej!
+
+**Rozwiązanie:** Re-encoding z obliczonym FPS:
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│                        RECORDING FLOW                                 │
+├──────────────────────────────────────────────────────────────────────┤
+│                                                                       │
+│  START RECORDING                                                      │
+│  ├─ Zapisz timestamp startu (perf_counter)                           │
+│  ├─ Utwórz temp_*.mp4 z placeholder FPS (30)                         │
+│  └─ Licz klatki (frame_count++)                                      │
+│                                                                       │
+│  STOP RECORDING                                                       │
+│  ├─ Oblicz czas trwania: duration = now - start                      │
+│  ├─ Oblicz realny FPS: real_fps = frame_count / duration             │
+│  │   Przykład: 340 klatek / 19s = 17.9 FPS                           │
+│  ├─ Re-encode temp_*.mp4 → final.mp4 z real_fps                      │
+│  └─ Usuń temp file                                                   │
+│                                                                       │
+│  REZULTAT: Video 19s odtwarza się w 19s ✓                            │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+### 5. Streaming MJPEG
+
+```python
+async def stream_raw():
+    while True:
+        frame = get_frame()  # Pobierz ostatnią klatkę z bufora
+        yield multipart_frame(frame)
+        await sleep(1.0 / actual_fps)  # Throttle do realnego FPS
+```
+
+## 📂 Struktura projektu
+
+```
+welding-detector/
+├── app/
+│   ├── main.py                    # FastAPI app + lifespan
+│   ├── api/
+│   │   ├── routes.py              # Wszystkie endpointy
+│   │   └── models.py              # Pydantic modele
+│   ├── config/
+│   │   └── settings.py            # Konfiguracja (.env)
+│   └── services/
+│       ├── camera_service.py      # Unified: capture + stream + record
+│       ├── video_overlay_service.py    # Post-processing overlay
+│       └── frame_overlay_service.py    # Live overlay (REC, timestamp)
+├── app_frontend/
+│   └── src/App.vue                # Vue 3 UI
+├── recordings/                    # Zapisane nagrania MP4
+├── .env                           # Konfiguracja
+└── requirements.txt
+```
+
+## 🚀 Uruchomienie
+
+### Backend
 ```bash
 pip install -r requirements.txt
+uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-### 2. Konfiguracja
-Utwórz plik `.env`:
-```env
-CAMERA_SERVER_URL=http://localhost:8001
-APP_TITLE=Welding Vision API
-DEBUG=False
-```
-
-### 3. Uruchomienie Camera-Server
+### Frontend
 ```bash
-# W pierwszym terminalu
-uvicorn camera_server.stream:app --host 0.0.0.0 --port 8001 --reload
+cd app_frontend
+npm install
+npm run dev
 ```
 
-### 4. Uruchomienie Backend API
-```bash
-# W drugim terminalu
-uvicorn app.main:app --reload
-```
-
-Lub z Docker:
+### Docker
 ```bash
 docker-compose up
 ```
 
 ## 📡 API Endpoints
 
-### Backend API (http://localhost:8000)
+### Camera
+| Endpoint | Metoda | Opis |
+|----------|--------|------|
+| `/camera/stream` | GET | MJPEG stream |
+| `/camera/stream/overlay` | GET | Stream z live overlay (REC, timestamp) |
+| `/camera/capture` | GET | Pojedyncza klatka JPEG |
+| `/camera/health` | GET | Status kamery |
+| `/camera/settings` | GET/PUT | Ustawienia (rozdzielczość, jakość JPEG) |
+| `/camera/monochrome` | GET/POST | Tryb czarno-biały |
 
-#### `GET /`
-Informacje o API
-```json
-{
-  "status": "running",
-  "camera_url": "http://localhost:8001",
-  "endpoints": {
-    "stream": "/stream - MJPEG video stream",
-    "capture": "/capture - Single frame (JPEG image)",
-    "health": "/health - API and camera health check",
-    "docs": "/docs - Interactive API documentation"
-  }
-}
-```
+### Recording
+| Endpoint | Metoda | Opis |
+|----------|--------|------|
+| `/recording/start` | POST | Rozpocznij nagrywanie |
+| `/recording/stop` | POST | Zatrzymaj + re-encode z prawidłowym FPS |
+| `/recording/status` | GET | Status nagrywania (czas, klatki) |
+| `/recording/list` | GET | Lista nagrań |
+| `/recording/download/{filename}` | GET | Pobierz nagranie |
+| `/recording/{filename}` | DELETE | Usuń nagranie |
+| `/recording/{filename}/apply-overlay` | POST | Nałóż timestamp na istniejące video |
 
-#### `GET /stream`
-MJPEG video stream
-```bash
-# Przeglądarka
-http://localhost:8000/stream
+## ⚙️ Konfiguracja
 
-# HTML
-<img src="http://localhost:8000/stream" />
-```
-
-#### `GET /capture` 🆕
-Pojedyncza klatka JPEG
-```bash
-# cURL
-curl http://localhost:8000/capture -o zdjecie.jpg
-
-# Python
-import requests
-frame = requests.get("http://localhost:8000/capture").content
-with open("foto.jpg", "wb") as f:
-    f.write(frame)
-
-# PowerShell
-Invoke-WebRequest -Uri http://localhost:8000/capture -OutFile foto.jpg
-```
-
-#### `GET /health`
-Status systemu
-```json
-{
-  "api": "healthy",
-  "camera_service": {
-    "status": "healthy",
-    "camera_server": {
-      "status": "healthy",
-      "camera": "connected",
-      "frame_size": 45678
-    }
-  }
-}
-```
-
-#### `GET /docs`
-Interaktywna dokumentacja Swagger UI
-```
-http://localhost:8000/docs
-```
-
-### Camera-Server (http://localhost:8001)
-
-#### `GET /stream`
-Bezpośredni stream z kamery
-
-#### `GET /capture`
-Bezpośrednia klatka z kamery
-
-#### `GET /health`
-Status kamery
-
-## 💡 Przykłady użycia
-
-### Python - Pobieranie klatek
-```python
-import requests
-from datetime import datetime
-
-while True:
-    # Pobierz klatkę
-    response = requests.get("http://localhost:8000/capture")
-    
-    if response.status_code == 200:
-        # Zapisz
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        with open(f"frame_{timestamp}.jpg", "wb") as f:
-            f.write(response.content)
-        
-        print(f"Saved frame_{timestamp}.jpg")
-    
-    time.sleep(1)  # Co sekundę
-```
-
-### Python - Analiza z PIL
-```python
-import requests
-from PIL import Image
-from io import BytesIO
-
-response = requests.get("http://localhost:8000/capture")
-img = Image.open(BytesIO(response.content))
-
-print(f"Rozdzielczość: {img.size}")
-img.show()
-```
-
-### HTML - Live preview
-```html
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Welding Camera</title>
-</head>
-<body>
-    <h1>Live Stream</h1>
-    <img src="http://localhost:8000/stream" width="640" />
-    
-    <h1>Snapshot</h1>
-    <img id="snapshot" src="http://localhost:8000/capture" />
-    
-    <script>
-        // Odświeżaj snapshot co sekundę
-        setInterval(() => {
-            document.getElementById('snapshot').src = 
-                'http://localhost:8000/capture?' + Date.now();
-        }, 1000);
-    </script>
-</body>
-</html>
-```
-
-## 🧪 Testowanie
-
-### Uruchom testy jednostkowe
-```bash
-pytest tests/ -v
-```
-
-### Test endpointu /capture
-```bash
-python test_capture_from_stream.py
-```
-
-### Przykładowe wyniki testów
-```
-✅ 38/38 testów PASS
-✅ Coverage: 100% krytycznej funkcjonalności
-✅ Testy API, serwisów, konfiguracji, integracji
-```
-
-## 🐳 Docker
-
-### Uruchomienie z docker-compose
-```bash
-docker-compose up
-```
-
-### Konfiguracja dla Docker
-W `.env` ustaw:
+Plik `.env`:
 ```env
-CAMERA_SERVER_URL=http://host.docker.internal:8001
+CAMERA_INDEX=0              # Indeks kamery USB
+CAMERA_USB_FPS=60           # Żądany FPS (rzeczywisty może być niższy)
+CAMERA_USB_WIDTH=1280       # Szerokość (1280=HD, 1920=FHD)
+CAMERA_USB_HEIGHT=720       # Wysokość (720=HD, 1080=FHD)
+CAMERA_JPEG_QUALITY=95      # Jakość JPEG (1-100)
 ```
 
-### Dlaczego Camera-Server NIE jest w Docker?
-❌ Docker na Windows nie ma dostępu do USB kamery  
-✅ Camera-Server działa na hoście (localhost:8001)  
-✅ Backend API w Docker łączy się przez `host.docker.internal`
+## 🔧 Technologie
 
-## 📚 Dokumentacja
+| Technologia | Użycie |
+|-------------|--------|
+| **OpenCV** | Video capture (MSMF/DirectShow), JPEG encoding, VideoWriter |
+| **FastAPI** | REST API + MJPEG streaming |
+| **Vue 3** | Frontend SPA |
+| **Tailwind CSS v4** | Stylowanie UI |
+| **Pydantic** | Walidacja danych |
 
-- [Endpoint /capture - Szczegóły](docs/CAPTURE_FROM_STREAM.md)
-- [Swagger UI](http://localhost:8000/docs) - Interaktywna dokumentacja
-- [OpenAPI Schema](http://localhost:8000/openapi.json)
+### Windows Camera Backends
 
-## 🔧 Konfiguracja
+| Backend | Opis | Wydajność |
+|---------|------|-----------|
+| **MSMF** | Media Foundation (Windows 7+) | ⭐⭐⭐ Najszybszy |
+| **DirectShow** | Klasyczne Windows API | ⭐⭐ Dobry |
+| **Auto** | Automatyczny wybór OpenCV | ⭐ Fallback |
 
-### Zmienne środowiskowe (.env)
-```env
-# Camera Server URL
-CAMERA_SERVER_URL=http://localhost:8001          # Lokalne
-# CAMERA_SERVER_URL=http://host.docker.internal:8001  # Docker
+Aplikacja automatycznie próbuje backendów w powyższej kolejności.
 
-# API Settings
-APP_TITLE=Welding Vision API
-DEBUG=False
-
-# Camera Settings (camera_server)
-CAMERA_INDEX=0
-```
-
-### Camera Service
-```python
-# app/services/camera_service.py
-CAMERA_INDEX = 0  # Zmień jeśli masz wiele kamer
-```
-
-## ⚡ Wydajność
-
-### Typowe wartości:
-- **Stream:** ~30 FPS, ~2-5 MB/s
-- **Capture:** ~200ms/request, ~50 KB/frame
-- **Health check:** <100ms
-
-### Optymalizacja:
-- Chunk size: 8192 bytes (8KB)
-- Timeout stream: 30s
-- Timeout capture: 10s
-
-## 🐛 Troubleshooting
-
-### "Camera unavailable"
-1. Sprawdź czy kamera jest podłączona
-2. Sprawdź czy camera-server działa: `curl http://localhost:8001/health`
-3. Sprawdź indeks kamery w `camera_service.py`
-
-### "Connection refused"
-1. Upewnij się że camera-server działa na porcie 8001
-2. Sprawdź `CAMERA_SERVER_URL` w `.env`
-3. Dla Docker użyj `host.docker.internal:8001`
-
-### Stream nie działa
-1. Sprawdź logi camera-server
-2. Sprawdź czy inna aplikacja nie używa kamery
-3. Zrestartuj camera-server
-
-### ⚠️ Błąd MSMF: "can't grab frame. Error: -1072875772"
-**Status:** ✅ **ROZWIĄZANY**
-
-System został zaktualizowany o profesjonalne rozwiązanie tego problemu:
-
-**Implementowane poprawki:**
-- ✅ DirectShow backend (stabilniejszy niż MSMF)
-- ✅ Thread-safety z `threading.Lock`
-- ✅ Retry logic z exponential backoff
-- ✅ Automatic reconnection
-- ✅ Frame caching dla graceful degradation
-- ✅ Comprehensive error handling & logging
-
-**Szczegóły:** Zobacz [docs/CAMERA_STABILITY.md](docs/CAMERA_STABILITY.md)
-
-**Weryfikacja:**
-```bash
-# Quick test
-python tests/test_camera_stability.py
-
-# Pełny test suite
-pytest tests/test_camera_stability.py -v
-```
-
-## 📝 TODO / Roadmap
-
-- [ ] Detekcja wad spawania (ML model)
-- [ ] WebSocket dla real-time events
-- [ ] Zapisywanie historii klatek
-- [ ] Panel admina
-- [ ] Alerty email/SMS przy wykryciu wad
-
-## 🤝 Contributing
-
-Pull requesty mile widziane! Przed większymi zmianami otwórz issue.
-
-## 📄 Licencja
+## 📝 Licencja
 
 MIT
-
-## 👨‍💻 Autor
-
-Zywerax
-
----
-
-**Status:** 🟢 Aktywny rozwój  
-**Wersja:** 1.0.0  
-**Python:** 3.11+  
-**FastAPI:** 0.104.1

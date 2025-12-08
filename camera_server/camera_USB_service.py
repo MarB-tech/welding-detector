@@ -72,27 +72,28 @@ class Camera_USB_Service:
             bool: True if camera initialized successfully
         """
         try:
-            logger.info(f"📹 Initializing USB camera {self.camera_index}")
+            logger.info(f"📹 Initializing USB camera {self.camera_index} (GStreamer)")
             
             # Release old capture if exists
             if self.cap is not None:
                 self.cap.release()
             
-            # Create new capture with DirectShow backend (more stable than MSMF)
-            # CAP_DSHOW = 700 (DirectShow on Windows)
-            self.cap = cv2.VideoCapture(self.camera_index, cv2.CAP_DSHOW)
+            # GStreamer pipeline dla Windows
+            pipeline = (
+                f"ksvideosrc device-index={self.camera_index} ! "
+                f"video/x-raw,width={settings.CAMERA_USB_WIDTH},height={settings.CAMERA_USB_HEIGHT} ! "
+                f"videoconvert ! appsink"
+            )
+            self.cap = cv2.VideoCapture(pipeline, cv2.CAP_GSTREAMER)
             
             if not self.cap.isOpened():
                 logger.error(f"Failed to open camera {self.camera_index}")
                 return False
             
-            # Set camera properties from settings
+            # Set camera properties
             self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Minimize buffering
-            self.cap.set(cv2.CAP_PROP_FPS, settings.CAMERA_USB_FPS)
-            self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, settings.CAMERA_USB_WIDTH)
-            self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, settings.CAMERA_USB_HEIGHT)
             
-            logger.info(f"📐 Camera settings: {settings.CAMERA_USB_WIDTH}x{settings.CAMERA_USB_HEIGHT} @ {settings.CAMERA_USB_FPS}fps")
+            logger.info(f"📐 Camera: {settings.CAMERA_USB_WIDTH}x{settings.CAMERA_USB_HEIGHT}")
             
             # Warm up camera - discard first few frames
             for _ in range(5):

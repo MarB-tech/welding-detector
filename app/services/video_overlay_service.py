@@ -215,6 +215,5 @@ _video_overlay_service: Optional[VideoOverlayService] = None
 def get_video_overlay_service() -> VideoOverlayService:
     global _video_overlay_service
     if _video_overlay_service is None:
-        from app.services.video_recorder_service import RECORDINGS_DIR
-        _video_overlay_service = VideoOverlayService(RECORDINGS_DIR)
+        _video_overlay_service = VideoOverlayService(Path("recordings"))
     return _video_overlay_service

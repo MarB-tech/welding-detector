@@ -1,4 +1,4 @@
-"""Camera Service - Bezpośredni dostęp do kamery USB (bez Docker/HTTP)."""
+"""Camera Service - Bezpośredni dostęp do kamery USB."""
 
 import asyncio
 import logging
@@ -12,12 +12,12 @@ logger = logging.getLogger(__name__)
 
 
 class RemoteCameraService:
-    """Bezpośredni dostęp do kamery USB - minimalne opóźnienie."""
+    """Bezpośredni dostęp do kamery USB (GStreamer)."""
     
     def __init__(self):
         self._camera = Camera_USB_Service(settings.CAMERA_INDEX)
         self._monochrome = False
-        logger.info(f"📹 DirectCameraService: camera index {settings.CAMERA_INDEX}")
+        logger.info(f"📹 CameraService: index {settings.CAMERA_INDEX}")
     
     @property
     def monochrome(self) -> bool:
@@ -26,34 +26,26 @@ class RemoteCameraService:
     @monochrome.setter
     def monochrome(self, value: bool):
         self._monochrome = value
-        logger.info(f"🎨 Monochrome mode: {'ON' if value else 'OFF'}")
+        logger.info(f"🎨 Monochrome: {'ON' if value else 'OFF'}")
     
     def _apply_monochrome(self, jpeg_bytes: bytes) -> bytes:
-        """Konwertuje JPEG do monochromu."""
         if not self._monochrome:
             return jpeg_bytes
         try:
-            # Decode JPEG
             frame = cv2.imdecode(np.frombuffer(jpeg_bytes, np.uint8), cv2.IMREAD_COLOR)
             if frame is None:
                 return jpeg_bytes
-            # Convert to grayscale
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            # Encode back to JPEG
             _, buffer = cv2.imencode('.jpg', gray, [cv2.IMWRITE_JPEG_QUALITY, 90])
             return buffer.tobytes()
         except Exception:
             return jpeg_bytes
     
     async def get_single_frame(self) -> Optional[bytes]:
-        """Pobiera pojedynczą klatkę."""
         frame = self._camera.get_frame()
-        if frame:
-            return self._apply_monochrome(frame)
-        return None
+        return self._apply_monochrome(frame) if frame else None
     
     async def stream_raw(self) -> AsyncGenerator[bytes, None]:
-        """Stream MJPEG - bezpośrednio z kamery."""
         while True:
             frame = self._camera.get_frame()
             if frame:
@@ -63,8 +55,7 @@ class RemoteCameraService:
                        + frame + b'\r\n')
             await asyncio.sleep(1.0 / settings.CAMERA_USB_FPS)
     
-    async def stream_frames(self, fps: int = 30) -> AsyncGenerator[bytes, None]:
-        """Stream klatek JPEG dla overlay/nagrywania."""
+    async def stream_frames(self, fps: int = settings.CAMERA_USB_FPS) -> AsyncGenerator[bytes, None]:
         interval = 1.0 / fps
         while True:
             frame = self._camera.get_frame()
@@ -73,7 +64,6 @@ class RemoteCameraService:
             await asyncio.sleep(interval)
     
     async def health_check(self) -> dict:
-        """Status kamery."""
         stats = self._camera.get_stats()
         return {
             "status": "healthy" if stats.get("is_opened") else "disconnected",

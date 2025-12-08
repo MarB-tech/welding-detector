@@ -1,6 +1,4 @@
-"""
-Pydantic models dla API.
-"""
+"""Pydantic models dla API."""
 
 from pydantic import BaseModel
 from typing import Optional, List
@@ -10,7 +8,6 @@ from enum import Enum
 class HealthStatus(str, Enum):
     HEALTHY = "healthy"
     UNHEALTHY = "unhealthy"
-    DEGRADED = "degraded"
     DISCONNECTED = "disconnected"
 
 
@@ -19,17 +16,9 @@ class CameraHealthResponse(BaseModel):
     camera_index: Optional[int] = None
     fps: Optional[float] = None
     resolution: Optional[str] = None
+    is_recording: Optional[bool] = None
     error: Optional[str] = None
 
-
-class AppHealthResponse(BaseModel):
-    status: HealthStatus
-    app_name: str
-    version: str
-    camera_status: CameraHealthResponse
-
-
-# ============== RECORDING ==============
 
 class RecordingStatusResponse(BaseModel):
     is_recording: bool
@@ -60,11 +49,8 @@ class RecordingListResponse(BaseModel):
     recordings: List[RecordingFile]
 
 
-# ============== CAMERA SETTINGS ==============
-
 class CameraSettingsRequest(BaseModel):
-    """Żądanie zmiany ustawień kamery."""
-    contrast: Optional[int] = None      # 0-255
-    fps: Optional[int] = None           # 15, 30, 60
-    jpeg_quality: Optional[int] = None  # 50-100
-    resolution: Optional[str] = None    # "HD" lub "FHD"
+    contrast: Optional[int] = None
+    fps: Optional[int] = None
+    jpeg_quality: Optional[int] = None
+    resolution: Optional[str] = None
