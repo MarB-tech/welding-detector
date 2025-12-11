@@ -119,6 +119,13 @@ async def delete_recording(filename: str, camera: CameraService = Depends(get_ca
     return {"status": "deleted", "filename": filename}
 
 
+@recording_router.put("/{filename}/note")
+async def set_recording_note(filename: str, note: str = Query("", max_length=500), camera: CameraService = Depends(get_camera_service)):
+    if not camera.set_note(filename, note):
+        raise HTTPException(404, "File not found")
+    return {"status": "saved", "filename": filename, "note": note}
+
+
 @recording_router.post("/{filename}/apply-overlay")
 async def apply_overlay(filename: str, start_time: str = None, camera: CameraService = Depends(get_camera_service), overlay: VideoOverlayService = Depends(get_video_overlay_service)):
     if not camera.get_recording_path(filename):

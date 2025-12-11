@@ -43,6 +43,7 @@ class RecordingFile(BaseModel):
     filename: str
     size_mb: float
     created: str
+    note: str = ""
 
 
 class RecordingListResponse(BaseModel):

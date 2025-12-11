@@ -264,7 +264,43 @@ class CameraService:
         return time.perf_counter() - self._recording_start if self._recording and self._recording_start else 0
     
     def list_recordings(self) -> list:
-        return sorted([{"filename": f.name, "size_mb": round(f.stat().st_size / (1024 * 1024), 2), "created": datetime.fromtimestamp(f.stat().st_ctime).isoformat()} for f in self.recordings_dir.glob("*.mp4")], key=lambda x: x["created"], reverse=True)
+        notes = self._load_notes()
+        return sorted([{
+            "filename": f.name, 
+            "size_mb": round(f.stat().st_size / (1024 * 1024), 2), 
+            "created": datetime.fromtimestamp(f.stat().st_ctime).isoformat(),
+            "note": notes.get(f.name, "")
+        } for f in self.recordings_dir.glob("*.mp4")], key=lambda x: x["created"], reverse=True)
+    
+    def _load_notes(self) -> dict:
+        notes_file = self.recordings_dir / "notes.json"
+        if notes_file.exists():
+            try:
+                import json
+                return json.loads(notes_file.read_text(encoding="utf-8"))
+            except:
+                return {}
+        return {}
+    
+    def _save_notes(self, notes: dict):
+        import json
+        notes_file = self.recordings_dir / "notes.json"
+        notes_file.write_text(json.dumps(notes, ensure_ascii=False, indent=2), encoding="utf-8")
+    
+    def set_note(self, filename: str, note: str) -> bool:
+        path = self.recordings_dir / filename
+        if not path.exists():
+            return False
+        notes = self._load_notes()
+        if note.strip():
+            notes[filename] = note.strip()
+        elif filename in notes:
+            del notes[filename]
+        self._save_notes(notes)
+        return True
+    
+    def get_note(self, filename: str) -> str:
+        return self._load_notes().get(filename, "")
     
     def get_recording_path(self, filename: str) -> Optional[Path]:
         path = self.recordings_dir / filename
