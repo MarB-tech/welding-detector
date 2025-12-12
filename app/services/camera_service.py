@@ -155,8 +155,15 @@ class CameraService:
                 self._last_frame = buf.tobytes()
                 self._last_raw_frame = frame
                 if self._recording and self._video_writer:
-                    self._video_writer.write(frame)
-                    self._frame_count += 1
+                    try:
+                        # Ensure frame matches VideoWriter size
+                        fh, fw = frame.shape[:2]
+                        if fw != self._record_width or fh != self._record_height:
+                            frame = cv2.resize(frame, (self._record_width, self._record_height))
+                        self._video_writer.write(frame)
+                        self._frame_count += 1
+                    except Exception as e:
+                        logger.error(f"Write frame error: {e}")
             
             # No artificial sleep - capture as fast as camera provides
     
@@ -192,17 +199,32 @@ class CameraService:
         self._recording_path = self.recordings_dir / filename
         self._temp_recording_path = self.recordings_dir / f"temp_{filename}"
         
+        # Get frame size from last captured frame or use settings
         with self.lock:
-            h, w = (self._last_raw_frame.shape[:2] if self._last_raw_frame is not None else (self.height, self.width))
+            if self._last_raw_frame is not None:
+                h, w = self._last_raw_frame.shape[:2]
+            else:
+                w, h = self.width, self.height
+        
+        self._record_width = w
+        self._record_height = h
         
         # Record at placeholder FPS - will be fixed in stop_recording
-        self._video_writer = cv2.VideoWriter(str(self._temp_recording_path), cv2.VideoWriter_fourcc(*'mp4v'), 30.0, (w, h))
+        self._video_writer = cv2.VideoWriter(
+            str(self._temp_recording_path), 
+            cv2.VideoWriter_fourcc(*'mp4v'), 
+            30.0, 
+            (w, h)
+        )
+        
+        if not self._video_writer.isOpened():
+            logger.error(f"❌ Failed to create VideoWriter: {self._temp_recording_path}")
+            return ""
+        
         self._recording = True
         self._recording_start = time.perf_counter()
         self._frame_count = 0
-        self._record_width = w
-        self._record_height = h
-        logger.info(f"🔴 Recording: {filename}")
+        logger.info(f"🔴 Recording: {filename} ({w}x{h})")
         return filename
     
     def stop_recording(self) -> dict:

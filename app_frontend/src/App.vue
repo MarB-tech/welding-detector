@@ -308,8 +308,6 @@ async function startRecording() {
     if (!response.ok) throw new Error('Nie można rozpocząć nagrywania')
     
     isRecording.value = true
-    // Przełącz na stream z nagrywaniem (klatki idą do pliku, overlay tylko na podgląd)
-    streamUrl.value = `/camera/stream/recording`
     showToast('🔴 Nagrywanie rozpoczęte')
   } catch (e) {
     showToast('❌ ' + e.message, 'error')
@@ -325,8 +323,6 @@ async function stopRecording() {
     
     isRecording.value = false
     recordingDuration.value = 0
-    // Wróć do płynnego streamu bez overlay
-    streamUrl.value = `/camera/stream`
     
     showToast(`⏹️ Zapisano: ${data.filename} (${data.duration_seconds}s)`)
     fetchRecordings()
