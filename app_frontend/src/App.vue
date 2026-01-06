@@ -182,6 +182,18 @@
             <td class="py-2">
               <span class="font-medium">🎬 {{ rec.filename }}</span>
               <span 
+                v-if="rec.filename.includes('_trimmed')" 
+                class="text-xs ml-2 px-2 py-0.5 rounded bg-green-200 text-green-800"
+              >
+                ✂️ Przycięte
+              </span>
+              <span 
+                v-else-if="trimStatus[rec.filename] === 'trimming'" 
+                class="text-xs ml-2 px-2 py-0.5 rounded bg-yellow-200 text-yellow-800 animate-pulse"
+              >
+                ⏳ Przycinanie...
+              </span>
+              <span 
                 v-if="overlayStatus[rec.filename]" 
                 class="text-xs ml-2 px-2 py-0.5 rounded"
                 :class="{
@@ -208,6 +220,20 @@
             </td>
             <td class="py-2 text-right">
               <div class="flex gap-1 justify-end">
+                <button 
+                  v-if="!rec.filename.includes('_trimmed') && trimStatus[rec.filename] !== 'trimming'"
+                  @click="trimToMotion(rec.filename)" 
+                  class="text-orange-500 hover:text-orange-700 px-2 py-1 text-sm"
+                  title="Przytnij do ruchu"
+                >
+                  ✂️
+                </button>
+                <span 
+                  v-else-if="trimStatus[rec.filename] === 'trimming'"
+                  class="text-orange-400 px-2 py-1 text-sm animate-spin"
+                >
+                  ⏳
+                </span>
                 <button 
                   v-if="!rec.filename.includes('_overlay') && !overlayStatus[rec.filename]"
                   @click="applyOverlay(rec.filename)" 
@@ -250,6 +276,7 @@ const isRecording = ref(false)
 const recordingDuration = ref(0)
 const recordings = ref([])
 const overlayStatus = ref({})  // filename -> status
+const trimStatus = ref({})  // filename -> 'trimming' | 'trimmed'
 const streamError = ref(false)
 const streamUrl = ref(`/camera/stream`)  // Domyślnie płynny stream
 const toast = ref({ show: false, message: '', type: 'success' })
@@ -385,6 +412,38 @@ async function applyOverlay(filename) {
     startOverlayPolling()
   } catch (e) {
     showToast('❌ ' + e.message, 'error')
+  }
+}
+
+async function trimToMotion(filename) {
+  try {
+    trimStatus.value[filename] = 'trimming'
+    showToast('✂️ Przycinanie do ruchu rozpoczęte...')
+    
+    const response = await fetch(`${API}/recording/${filename}/trim-to-motion`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    })
+    
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.detail || 'Nie można przyciąć wideo')
+    }
+    
+    const data = await response.json()
+    
+    if (data.status === 'no_motion') {
+      showToast('⚠️ Nie wykryto ruchu w nagraniu', 'error')
+      delete trimStatus.value[filename]
+    } else {
+      showToast(`✂️ Przycięto! ${data.output_filename} (${data.duration_seconds}s, -${data.reduction_percent}%)`)
+      delete trimStatus.value[filename]
+      fetchRecordings()
+    }
+  } catch (e) {
+    showToast('❌ ' + e.message, 'error')
+    delete trimStatus.value[filename]
   }
 }
 
