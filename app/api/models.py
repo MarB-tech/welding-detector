@@ -55,3 +55,41 @@ class CameraSettingsRequest(BaseModel):
     fps: Optional[int] = None
     jpeg_quality: Optional[int] = None
     resolution: Optional[str] = None
+
+
+# ============== FRAME EXTRACTION ==============
+
+class VideoInfoResponse(BaseModel):
+    """Informacje o pliku wideo."""
+    filename: str
+    frame_count: int
+    fps: float
+    width: int
+    height: int
+    duration_seconds: float
+
+
+class ExtractFramesRequest(BaseModel):
+    """Request do ekstrakcji klatek."""
+    step: int = 1              # Co która klatka (1 = każda)
+    max_frames: Optional[int] = None  # Limit klatek
+    output_folder: Optional[str] = None  # Folder docelowy (domyślnie: frames/{filename}/)
+    prefix: str = "frame"      # Prefix nazwy pliku
+    jpeg_quality: int = 95     # Jakość JPEG
+
+
+class ExtractFramesResponse(BaseModel):
+    """Response z wynikiem ekstrakcji."""
+    status: str
+    filename: str
+    frames_extracted: int
+    output_folder: str
+    files: List[str]
+
+
+class FrameResponse(BaseModel):
+    """Informacje o pojedynczej klatce."""
+    index: int
+    timestamp_ms: float
+    width: int
+    height: int

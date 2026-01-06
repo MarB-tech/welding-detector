@@ -4,14 +4,17 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse, Response, FileResponse
 from datetime import datetime
 from typing import Optional
+from pathlib import Path
 
 from app.services.camera_service import CameraService, get_camera_service
 from app.services.frame_overlay_service import FrameOverlayService, get_overlay_service
 from app.services.video_overlay_service import VideoOverlayService, get_video_overlay_service
+from app.services.frame_extractor_service import FrameExtractorService, get_frame_extractor_service
 from app.api.models import (
     CameraHealthResponse, HealthStatus,
     RecordingStatusResponse, RecordingStartResponse, RecordingStopResponse, RecordingListResponse,
-    CameraSettingsRequest
+    CameraSettingsRequest,
+    VideoInfoResponse, ExtractFramesRequest, ExtractFramesResponse, FrameResponse
 )
 
 camera_router = APIRouter(prefix="/camera", tags=["Camera"])
@@ -139,3 +142,112 @@ async def apply_overlay(filename: str, start_time: Optional[str] = None, camera:
 @recording_router.get("/{filename}/overlay-status")
 async def overlay_status(filename: str, overlay: VideoOverlayService = Depends(get_video_overlay_service)):
     return overlay.get_status(filename) or {"status": "not_found"}
+
+
+# ============== FRAME EXTRACTION ==============
+
+@recording_router.get("/{filename}/info", response_model=VideoInfoResponse)
+async def get_video_info(
+    filename: str,
+    camera: CameraService = Depends(get_camera_service),
+    extractor: FrameExtractorService = Depends(get_frame_extractor_service)
+):
+    """Pobiera informacje o pliku wideo (liczba klatek, fps, rozdzielczość)."""
+    path = camera.get_recording_path(filename)
+    if not path:
+        raise HTTPException(404, "File not found")
+    
+    try:
+        info = extractor.get_video_info(path)
+        return VideoInfoResponse(filename=filename, **info)
+    except Exception as e:
+        raise HTTPException(500, f"Cannot read video info: {e}")
+
+
+@recording_router.post("/{filename}/extract-frames", response_model=ExtractFramesResponse)
+async def extract_frames(
+    filename: str,
+    req: ExtractFramesRequest,
+    camera: CameraService = Depends(get_camera_service),
+    extractor: FrameExtractorService = Depends(get_frame_extractor_service)
+):
+    """
+    Ekstrahuje klatki z nagrania i zapisuje jako JPEG.
+    
+    - step: co która klatka (1 = każda, 2 = co druga, itd.)
+    - max_frames: limit klatek do wyekstrahowania
+    - output_folder: folder docelowy (domyślnie: frames/{filename}/)
+    """
+    path = camera.get_recording_path(filename)
+    if not path:
+        raise HTTPException(404, "File not found")
+    
+    # Ustal folder docelowy
+    base_name = Path(filename).stem
+    output_folder = req.output_folder or f"frames/{base_name}"
+    
+    try:
+        frames = extractor.extract_frames(path, step=req.step, max_frames=req.max_frames)
+        saved = extractor.save_frames_to_folder(
+            frames, 
+            output_folder, 
+            prefix=req.prefix,
+            jpeg_quality=req.jpeg_quality
+        )
+        
+        return ExtractFramesResponse(
+            status="completed",
+            filename=filename,
+            frames_extracted=len(frames),
+            output_folder=output_folder,
+            files=[f.name for f in saved]
+        )
+    except Exception as e:
+        raise HTTPException(500, f"Extraction failed: {e}")
+
+
+@recording_router.get("/{filename}/frame/{frame_index}")
+async def get_single_frame(
+    filename: str,
+    frame_index: int,
+    camera: CameraService = Depends(get_camera_service),
+    extractor: FrameExtractorService = Depends(get_frame_extractor_service)
+):
+    """
+    Pobiera pojedynczą klatkę z nagrania jako JPEG.
+    
+    - frame_index: numer klatki (0-based)
+    """
+    path = camera.get_recording_path(filename)
+    if not path:
+        raise HTTPException(404, "File not found")
+    
+    try:
+        # Użyj generatora aby nie ładować wszystkich klatek
+        import cv2
+        cap = cv2.VideoCapture(str(path))
+        if not cap.isOpened():
+            raise HTTPException(500, "Cannot open video file")
+        
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        if frame_index < 0 or frame_index >= total_frames:
+            cap.release()
+            raise HTTPException(400, f"Frame index out of range (0-{total_frames-1})")
+        
+        # Przeskocz do żądanej klatki
+        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_index)
+        ret, frame = cap.read()
+        cap.release()
+        
+        if not ret:
+            raise HTTPException(500, "Cannot read frame")
+        
+        # Encode to JPEG
+        _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 95])
+        return Response(buffer.tobytes(), media_type="image/jpeg")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"Failed to get frame: {e}")
+
