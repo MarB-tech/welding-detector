@@ -93,3 +93,47 @@ class FrameResponse(BaseModel):
     timestamp_ms: float
     width: int
     height: int
+
+
+# ============== MOTION DETECTION ==============
+
+class MotionSegmentResponse(BaseModel):
+    """Segment wideo z wykrytym ruchem."""
+    start_frame: int
+    end_frame: int
+    start_time_ms: float
+    end_time_ms: float
+    duration_ms: float
+
+
+class MotionAnalysisResponse(BaseModel):
+    """Wynik analizy ruchu w wideo."""
+    filename: str
+    total_frames: int
+    fps: float
+    duration_seconds: float
+    segments: List[MotionSegmentResponse]
+    motion_percentage: float
+
+
+class TrimToMotionRequest(BaseModel):
+    """Request do przycinania wideo."""
+    threshold: Optional[int] = None       # Próg detekcji (0-255)
+    min_area_percent: Optional[float] = None  # Min % powierzchni ze zmianą
+    include_all_segments: bool = True     # True = wszystkie, False = najdłuższy
+    output_filename: Optional[str] = None # Nazwa pliku wyjściowego
+
+
+class TrimToMotionResponse(BaseModel):
+    """Response z wynikiem przycinania."""
+    status: str
+    input_filename: str
+    output_filename: Optional[str] = None
+    output_path: Optional[str] = None
+    segments_count: Optional[int] = None
+    frames_written: Optional[int] = None
+    duration_seconds: Optional[float] = None
+    original_size_mb: Optional[float] = None
+    output_size_mb: Optional[float] = None
+    reduction_percent: Optional[float] = None
+    message: Optional[str] = None

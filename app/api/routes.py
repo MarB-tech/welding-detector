@@ -10,11 +10,13 @@ from app.services.camera_service import CameraService, get_camera_service
 from app.services.frame_overlay_service import FrameOverlayService, get_overlay_service
 from app.services.video_overlay_service import VideoOverlayService, get_video_overlay_service
 from app.services.frame_extractor_service import FrameExtractorService, get_frame_extractor_service
+from app.services.motion_detection_service import MotionDetectionService, get_motion_detection_service
 from app.api.models import (
     CameraHealthResponse, HealthStatus,
     RecordingStatusResponse, RecordingStartResponse, RecordingStopResponse, RecordingListResponse,
     CameraSettingsRequest,
-    VideoInfoResponse, ExtractFramesRequest, ExtractFramesResponse, FrameResponse
+    VideoInfoResponse, ExtractFramesRequest, ExtractFramesResponse, FrameResponse,
+    MotionAnalysisResponse, MotionSegmentResponse, TrimToMotionRequest, TrimToMotionResponse
 )
 
 camera_router = APIRouter(prefix="/camera", tags=["Camera"])
@@ -250,4 +252,78 @@ async def get_single_frame(
         raise
     except Exception as e:
         raise HTTPException(500, f"Failed to get frame: {e}")
+
+
+# ============== MOTION DETECTION ==============
+
+@recording_router.get("/{filename}/detect-motion", response_model=MotionAnalysisResponse)
+async def detect_motion(
+    filename: str,
+    threshold: int = 25,
+    min_area_percent: float = 0.5,
+    camera: CameraService = Depends(get_camera_service),
+    motion: MotionDetectionService = Depends(get_motion_detection_service)
+):
+    """
+    Analizuje nagranie i wykrywa segmenty z ruchem kamery/obiektu.
+    
+    - threshold: próg różnicy pikseli (0-255), wyższy = mniej czuły
+    - min_area_percent: minimalny % powierzchni ze zmianą
+    """
+    path = camera.get_recording_path(filename)
+    if not path:
+        raise HTTPException(404, "File not found")
+    
+    try:
+        result = motion.detect_motion(path, threshold=threshold, min_area_percent=min_area_percent)
+        return MotionAnalysisResponse(
+            filename=result.filename,
+            total_frames=result.total_frames,
+            fps=result.fps,
+            duration_seconds=result.duration_seconds,
+            segments=[MotionSegmentResponse(
+                start_frame=s.start_frame,
+                end_frame=s.end_frame,
+                start_time_ms=s.start_time_ms,
+                end_time_ms=s.end_time_ms,
+                duration_ms=s.duration_ms
+            ) for s in result.segments],
+            motion_percentage=result.motion_percentage
+        )
+    except Exception as e:
+        raise HTTPException(500, f"Motion detection failed: {e}")
+
+
+@recording_router.post("/{filename}/trim-to-motion", response_model=TrimToMotionResponse)
+async def trim_to_motion(
+    filename: str,
+    req: TrimToMotionRequest,
+    camera: CameraService = Depends(get_camera_service),
+    motion: MotionDetectionService = Depends(get_motion_detection_service)
+):
+    """
+    Przycina nagranie do segmentów z wykrytym ruchem.
+    
+    Tworzy nowy plik zawierający tylko fragmenty z ruchem kamery.
+    """
+    path = camera.get_recording_path(filename)
+    if not path:
+        raise HTTPException(404, "File not found")
+    
+    # Ustal ścieżkę wyjściową
+    output_path = None
+    if req.output_filename:
+        output_path = path.parent / req.output_filename
+    
+    try:
+        result = motion.trim_to_motion(
+            path,
+            output_path=output_path,
+            threshold=req.threshold,
+            min_area_percent=req.min_area_percent,
+            include_all_segments=req.include_all_segments
+        )
+        return TrimToMotionResponse(**result)
+    except Exception as e:
+        raise HTTPException(500, f"Trim failed: {e}")
 
