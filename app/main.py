@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 import logging
 
 from app.config import settings
-from app.api.routes import camera_router, edge_router, recording_router, labeling_router, ml_router
+from app.api.routes import camera_router, edge_router, recording_router, labeling_router, ml_router, defect_router
 from app.services.camera_service import get_camera_service
 
 logging.basicConfig(
@@ -82,6 +82,7 @@ app.include_router(edge_router)
 app.include_router(recording_router)
 app.include_router(labeling_router)
 app.include_router(ml_router)
+app.include_router(defect_router)
 
 
 if __name__ == "__main__":

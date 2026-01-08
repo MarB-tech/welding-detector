@@ -31,6 +31,14 @@ export default defineConfig({
       '/ml': {
         target: 'http://localhost:8000',
         changeOrigin: true
+      },
+      '/defects': {
+        target: 'http://localhost:8000',
+        changeOrigin: true
+      },
+      '/defects': {
+        target: 'http://localhost:8000',
+        changeOrigin: true
       }
     }
   }

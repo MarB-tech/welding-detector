@@ -580,8 +580,74 @@
                 :disabled="trainingInProgress"
                 class="w-full mt-2 px-2 py-1 bg-purple-500 hover:bg-purple-600 text-white rounded text-xs"
               >
-                {{ trainingInProgress ? '⏳ Trening...' : '🚀 Trenuj model' }}
+                {{ trainingInProgress ? '⏳ Trening...' : '🚀 Trenuj OK/NOK' }}
               </button>
+              
+              <!-- Defect classifier button -->
+              <button 
+                v-if="labelingStats && labelingStats.nok_count >= 10"
+                @click="startDefectTraining"
+                :disabled="defectTrainingInProgress"
+                class="w-full mt-2 px-2 py-1 bg-orange-500 hover:bg-orange-600 text-white rounded text-xs"
+              >
+                {{ defectTrainingInProgress ? '⏳ Trening defektów...' : '🔥 Trenuj klasyfikator wad' }}
+              </button>
+            </div>
+            
+            <!-- Defect Classification Section -->
+            <hr class="my-4">
+            <h4 class="font-bold text-sm mb-3">🔍 Klasyfikacja Wad</h4>
+            
+            <!-- Defect prediction result -->
+            <div v-if="defectPrediction" class="mb-3 p-2 bg-red-50 rounded border border-red-200">
+              <div class="font-bold text-center text-red-800 mb-2">
+                {{ getDefectLabel(defectPrediction.prediction) }}
+              </div>
+              <div class="text-xs text-center text-red-600 mb-2">
+                Pewność: {{ defectPrediction.confidence }}%
+              </div>
+              <!-- Top 3 probabilities -->
+              <div v-if="defectPrediction.class_probabilities" class="text-xs space-y-1">
+                <div v-for="(prob, className) in getTopDefectProbabilities(defectPrediction.class_probabilities, 3)" 
+                  :key="className"
+                  class="flex justify-between items-center">
+                  <span>{{ getDefectLabel(className) }}</span>
+                  <span class="font-mono">{{ prob.toFixed(1) }}%</span>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Defect classifier buttons -->
+            <div v-if="defectInfo?.model_loaded" class="space-y-2">
+              <button 
+                @click="predictDefect"
+                :disabled="defectPredicting"
+                class="w-full px-3 py-2 bg-red-500 hover:bg-red-600 text-white rounded text-sm disabled:opacity-50"
+              >
+                {{ defectPredicting ? '⏳ Analizuję...' : '🔍 Klasyfikuj wadę' }}
+              </button>
+              
+              <button 
+                @click="showDefectGradCAM"
+                :disabled="!defectInfo?.gradcam_available"
+                class="w-full px-3 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded text-sm disabled:opacity-50"
+              >
+                🔥 Grad-CAM wady
+              </button>
+            </div>
+            
+            <!-- Defect model info -->
+            <div v-if="defectInfo" class="mt-3 text-xs text-gray-500 bg-white p-2 rounded">
+              <div class="flex justify-between">
+                <span>Model wad:</span>
+                <span :class="defectInfo.model_loaded ? 'text-green-600' : 'text-red-600'">
+                  {{ defectInfo.model_loaded ? '✅ Załadowany' : '❌ Brak' }}
+                </span>
+              </div>
+              <div v-if="defectInfo.training_data_stats" class="flex justify-between">
+                <span>Klasy:</span>
+                <span>{{ defectInfo.training_data_stats.num_classes || 0 }}</span>
+              </div>
             </div>
           </div>
         </div>
@@ -685,7 +751,13 @@ const mlInfo = ref(null)
 const mlPrediction = ref(null)
 const mlPredicting = ref(false)
 const trainingInProgress = ref(false)
+const defectTrainingInProgress = ref(false)
 const showingGradCAM = ref(false)
+
+// Defect classifier state
+const defectInfo = ref(null)
+const defectPrediction = ref(null)
+const defectPredicting = ref(false)
 
 const streamUrl = ref(`/camera/stream`)  // Domyślnie płynny stream
 const toast = ref({ show: false, message: '', type: 'success' })
@@ -968,6 +1040,7 @@ async function openFrameViewer(filename) {
   frameViewer.value.show = true
   frameViewer.value.currentLabel = null
   mlPrediction.value = null  // Reset ML prediction
+  defectPrediction.value = null  // Reset defect prediction
   showingGradCAM.value = false
   resetFilters()
   
@@ -978,11 +1051,12 @@ async function openFrameViewer(filename) {
     frameViewer.value.totalFrames = info.frame_count
     updateFrameImage()
     
-    // Pobierz statystyki etykietowania, etykietę bieżącej klatki i info ML
+    // Pobierz statystyki etykietowania, etykietę bieżącej klatki i info ML + defect
     await Promise.all([
       fetchLabelingStats(),
       fetchCurrentLabel(),
-      fetchMLInfo()
+      fetchMLInfo(),
+      fetchDefectInfo()
     ])
   } catch (e) {
     showToast('❌ ' + e.message, 'error')
@@ -1034,6 +1108,7 @@ function prevFrame() {
   if (frameViewer.value.currentFrame > 0) {
     frameViewer.value.currentFrame--
     mlPrediction.value = null  // Reset prediction on frame change
+    defectPrediction.value = null  // Reset defect prediction
     showingGradCAM.value = false
     updateFrameImage()
     fetchCurrentLabel()
@@ -1044,6 +1119,7 @@ function nextFrame() {
   if (frameViewer.value.currentFrame < frameViewer.value.totalFrames - 1) {
     frameViewer.value.currentFrame++
     mlPrediction.value = null  // Reset prediction on frame change
+    defectPrediction.value = null  // Reset defect prediction
     showingGradCAM.value = false
     updateFrameImage()
     fetchCurrentLabel()
@@ -1242,6 +1318,61 @@ async function showGradCAM() {
   showToast('🔥 Pokazuję Grad-CAM - obszary uwagi AI')
 }
 
+// ============== DEFECT CLASSIFICATION ==============
+
+async function fetchDefectInfo() {
+  try {
+    const response = await fetch(`${API}/defects/info`)
+    if (response.ok) {
+      defectInfo.value = await response.json()
+    }
+  } catch (e) {
+    console.error('Failed to fetch defect info:', e)
+  }
+}
+
+async function predictDefect() {
+  const filename = frameViewer.value.filename
+  const frameIndex = frameViewer.value.currentFrame
+  
+  defectPredicting.value = true
+  defectPrediction.value = null
+  
+  try {
+    const response = await fetch(`${API}/defects/predict?filename=${filename}&frame_index=${frameIndex}`, {
+      method: 'POST'
+    })
+    
+    if (!response.ok) throw new Error('Błąd predykcji defektu')
+    
+    defectPrediction.value = await response.json()
+    showToast(`🔍 ${getDefectLabel(defectPrediction.value.prediction)} (${defectPrediction.value.confidence}%)`)
+  } catch (e) {
+    showToast('❌ ' + e.message, 'error')
+  } finally {
+    defectPredicting.value = false
+  }
+}
+
+async function showDefectGradCAM() {
+  const filename = frameViewer.value.filename
+  const frameIndex = frameViewer.value.currentFrame
+  
+  // Zamień URL obrazu na Grad-CAM overlay dla defektów
+  frameViewer.value.imageUrl = `${API}/defects/predict/${filename}/frame/${frameIndex}/gradcam?_t=${Date.now()}`
+  
+  showToast('🔥 Grad-CAM - obszary uwagi dla typu wady')
+}
+
+function getTopDefectProbabilities(probabilities, top = 3) {
+  return Object.entries(probabilities)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, top)
+    .reduce((obj, [key, val]) => ({ ...obj, [key]: val }), {})
+}
+
+// ============== TRAINING ==============
+
 async function startTraining() {
   trainingInProgress.value = true
   
@@ -1280,6 +1411,48 @@ async function startTraining() {
   } catch (e) {
     showToast('❌ ' + e.message, 'error')
     trainingInProgress.value = false
+  }
+}
+
+async function startDefectTraining() {
+  defectTrainingInProgress.value = true
+  
+  try {
+    const response = await fetch(`${API}/defects/train?epochs=30&batch_size=16`, {
+      method: 'POST'
+    })
+    
+    if (!response.ok) {
+      const error = await response.json()
+      console.error('Defect training error:', error)
+      throw new Error(error.detail || 'Błąd rozpoczęcia treningu klasyfikatora wad')
+    }
+    
+    showToast('🔥 Trening klasyfikatora wad rozpoczęty!')
+    
+    // Poll status treningu
+    const pollDefectTraining = setInterval(async () => {
+      const statusResponse = await fetch(`${API}/defects/info`)
+      if (statusResponse.ok) {
+        const info = await statusResponse.json()
+        const status = info.training_status
+        
+        if (!status.in_progress) {
+          clearInterval(pollDefectTraining)
+          defectTrainingInProgress.value = false
+          
+          if (status.error) {
+            showToast('❌ Trening wad nieudany: ' + status.error, 'error')
+          } else {
+            showToast(`🎉 Klasyfikator wad wytrenowany! Dokładność: ${status.history?.best_val_acc?.toFixed(1)}%`)
+          }
+        }
+      }
+    }, 3000)
+    
+  } catch (e) {
+    showToast('❌ ' + e.message, 'error')
+    defectTrainingInProgress.value = false
   }
 }
 
