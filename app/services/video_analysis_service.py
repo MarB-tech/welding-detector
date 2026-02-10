@@ -1,6 +1,6 @@
 """
-Video Analysis Service - Batch analysis całych nagrań
-Analizuje wszystkie klatki: OK/NOK + typ defektu
+Video Analysis Service - Batch analysis of entire recordings
+Analyzes all frames: OK/NOK + defect type
 """
 
 import json
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 class VideoAnalysisService:
-    """Serwis do batch analizy wideo"""
+    """Service for batch analysis of videos - classifies each frame as OK/NOK and identifies defect types."""
     
     def __init__(self, results_dir: str = "recordings/analysis"):
         self.results_dir = Path(results_dir)
@@ -36,17 +36,17 @@ class VideoAnalysisService:
         progress_callback = None
     ) -> Dict[str, Any]:
         """
-        Analizuje całe wideo klatka po klatce
+        Analyzes an entire video frame by frame.
         
         Args:
-            filename: Nazwa pliku wideo
-            analyze_defects: Czy klasyfikować typy defektów dla NOK
-            skip_frames: Analizuj co N-tą klatkę (1 = wszystkie)
-            progress_callback: Funkcja callback(current, total, frame_result)
+            filename: Name of the video file
+            analyze_defects: Whether to classify defect types for NOK frames
+            skip_frames: Analyze every Nth frame (1 = all frames)
+            progress_callback: Callback function(current, total, frame_result)
         """
         logger.info(f"Starting video analysis: {filename}")
         
-        # Pobierz liczbę klatek
+        # Get the number of frames in the video
         video_info = self.frame_extractor.get_video_info(filename)
         if not video_info:
             raise ValueError(f"Video not found: {filename}")
@@ -68,7 +68,7 @@ class VideoAnalysisService:
             "frames": []
         }
         
-        # Analizuj klatki
+        # Analyze frames
         for idx, frame_index in enumerate(frames_to_analyze):
             try:
                 frame = self.frame_extractor.get_frame(filename, frame_index)
@@ -76,7 +76,7 @@ class VideoAnalysisService:
                     logger.warning(f"Failed to extract frame {frame_index}")
                     continue
                 
-                # Klasyfikacja OK/NOK
+                # OK/NOK classification
                 prediction = self.ml_service.predict(frame, with_gradcam=False)
                 
                 frame_result = {
@@ -91,7 +91,7 @@ class VideoAnalysisService:
                 else:
                     results["summary"]["nok"] += 1
                     
-                    # Klasyfikacja typu defektu jeśli NOK
+                    # Defect type classification if NOK
                     if analyze_defects and self.defect_service.model:
                         try:
                             defect_pred = self.defect_service.predict(frame, with_gradcam=False)
@@ -113,21 +113,21 @@ class VideoAnalysisService:
             except Exception as e:
                 logger.error(f"Error analyzing frame {frame_index}: {e}")
         
-        # Zapisz wyniki
+        # Save results
         self._save_results(filename, results)
         
         logger.info(f"Analysis complete: {filename} - OK: {results['summary']['ok']}, NOK: {results['summary']['nok']}")
         return results
     
     def _save_results(self, filename: str, results: Dict[str, Any]):
-        """Zapisz wyniki analizy do JSON"""
+        """Save analysis results to JSON"""
         result_file = self.results_dir / f"{Path(filename).stem}.json"
         with open(result_file, 'w') as f:
             json.dump(results, f, indent=2)
         logger.info(f"Results saved to {result_file}")
     
     def get_analysis_results(self, filename: str) -> Optional[Dict[str, Any]]:
-        """Pobierz zapisane wyniki analizy"""
+        """Get saved analysis results for a video"""
         result_file = self.results_dir / f"{Path(filename).stem}.json"
         if not result_file.exists():
             return None
@@ -136,12 +136,12 @@ class VideoAnalysisService:
             return json.load(f)
     
     def has_analysis(self, filename: str) -> bool:
-        """Sprawdź czy wideo ma zapisaną analizę"""
+        """Check if a video has saved analysis results"""
         result_file = self.results_dir / f"{Path(filename).stem}.json"
         return result_file.exists()
     
     def get_defect_frames(self, filename: str, defect_type: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Pobierz listę klatek z defektami"""
+        """Get a list of frames with defects, optionally filtered by defect type"""
         results = self.get_analysis_results(filename)
         if not results:
             return []
@@ -158,7 +158,7 @@ class VideoAnalysisService:
 _analysis_service_instance = None
 
 def get_video_analysis_service() -> VideoAnalysisService:
-    """Pobierz singleton VideoAnalysisService"""
+    """Get the singleton VideoAnalysisService"""
     global _analysis_service_instance
     if _analysis_service_instance is None:
         _analysis_service_instance = VideoAnalysisService()

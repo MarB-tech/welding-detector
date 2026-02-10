@@ -45,7 +45,7 @@ class CameraService:
         self._fps_samples = []
         self._last_frame_time = 0
         
-        self.recordings_dir = Path("recordings")
+        self.recordings_dir = Path("recordings") #folder for recordings
         self.recordings_dir.mkdir(exist_ok=True)
         
         self._init_camera()
@@ -59,14 +59,14 @@ class CameraService:
         # Try different backends in order of preference
         backends = [
             (cv2.CAP_MSMF, "MSMF"),      # Media Foundation - usually fastest on Windows
-            (cv2.CAP_DSHOW, "DirectShow"),
-            (cv2.CAP_ANY, "Auto"),
+            (cv2.CAP_DSHOW, "DirectShow"),  # Older Windows backend - can be slower but more compatible
+            (cv2.CAP_ANY, "Auto"),  # Let OpenCV choose the best available backend
         ]
         
         for backend, name in backends:
             self.cap = cv2.VideoCapture(self.camera_index, backend)
             if self.cap.isOpened():
-                logger.info(f"🎥 Using backend: {name}")
+                logger.info(f"Using backend: {name}")
                 break
         else:
             logger.error(f"Failed to open camera {self.camera_index}")
@@ -85,7 +85,7 @@ class CameraService:
         
         w = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         h = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        logger.info(f"📹 Camera opened: {w}x{h} @ {self.actual_fps:.1f}fps (requested: {self.requested_fps})")
+        logger.info(f"Camera opened: {w}x{h} @ {self.actual_fps:.1f}fps (requested: {self.requested_fps})")
         return True
     
     def _measure_actual_fps(self):
@@ -111,7 +111,7 @@ class CameraService:
             # Clamp to reasonable range
             self.actual_fps = max(5.0, min(self.actual_fps, 120.0))
         
-        logger.info(f"📊 Measured FPS: {self.actual_fps:.1f} ({frames_captured} frames in {elapsed:.2f}s)")
+        logger.info(f"Measured FPS: {self.actual_fps:.1f} ({frames_captured} frames in {elapsed:.2f}s)")
     
     def _start_capture(self):
         if self._running:
@@ -147,9 +147,8 @@ class CameraService:
             self._last_frame_time = now
             
             if self.monochrome:
-                frame = cv2.cvtColor(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), cv2.COLOR_GRAY2BGR)
-            
-            _, buf = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality])
+                frame = cv2.cvtColor(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), cv2.COLOR_GRAY2BGR)    
+                _,buf = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality])
             
             with self.lock:
                 self._last_frame = buf.tobytes()
@@ -218,13 +217,13 @@ class CameraService:
         )
         
         if not self._video_writer.isOpened():
-            logger.error(f"❌ Failed to create VideoWriter: {self._temp_recording_path}")
+            logger.error(f"Failed to create VideoWriter: {self._temp_recording_path}")
             return ""
         
         self._recording = True
         self._recording_start = time.perf_counter()
         self._frame_count = 0
-        logger.info(f"🔴 Recording: {filename} ({w}x{h})")
+        logger.info(f"Recording: {filename} ({w}x{h})")
         return filename
     
     def stop_recording(self) -> dict:
@@ -242,7 +241,7 @@ class CameraService:
         # Calculate real FPS based on actual recording
         real_fps = frames / duration if duration > 0 else 30.0
         real_fps = max(10.0, min(real_fps, 60.0))
-        logger.info(f"📊 Recording stats: {frames} frames in {duration:.1f}s = {real_fps:.1f} fps")
+        logger.info(f"Recording stats: {frames} frames in {duration:.1f}s = {real_fps:.1f} fps")
         
         # Re-encode with correct FPS
         if self._temp_recording_path and self._temp_recording_path.exists():
@@ -251,7 +250,7 @@ class CameraService:
         size_mb = self._recording_path.stat().st_size / (1024 * 1024) if self._recording_path and self._recording_path.exists() else 0
         
         result = {"filename": self._recording_path.name if self._recording_path else "", "duration_seconds": round(duration, 1), "frames": frames, "fps": round(real_fps, 1), "size_mb": round(size_mb, 2)}
-        logger.info(f"⏹️ Stopped: {result}")
+        logger.info(f"Stopped: {result}")
         self._recording_path = self._recording_start = self._temp_recording_path = None
         self._frame_count = 0
         return result
@@ -272,7 +271,7 @@ class CameraService:
             writer.release()
             if self._temp_recording_path:
                 self._temp_recording_path.unlink()  # Delete temp file
-            logger.info(f"✅ Re-encoded with {target_fps:.1f} fps")
+            logger.info(f"Re-encoded with {target_fps:.1f} fps")
         except Exception as e:
             logger.error(f"Re-encode failed: {e}")
             # Fallback - just rename temp to final

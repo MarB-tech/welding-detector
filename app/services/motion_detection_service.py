@@ -1,8 +1,7 @@
 """
-Motion Detection Service - wykrywanie ruchu w nagraniach wideo.
-
-Serwis do detekcji segmentów z ruchem w nagraniach spawalniczych.
-Używa cv2.absdiff do porównywania kolejnych klatek.
+Motion Detection Service - detection of motion in video recordings.
+Service for detecting segments with motion in welding recordings.
+Uses cv2.absdiff to compare consecutive frames.
 """
 
 import cv2  # type: ignore
@@ -17,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class MotionSegment:
-    """Segment wideo z ruchem."""
+    """Video segment with motion."""
     start_frame: int
     end_frame: int
     start_time_ms: float
@@ -27,34 +26,34 @@ class MotionSegment:
 
 @dataclass
 class MotionAnalysisResult:
-    """Wynik analizy ruchu w wideo."""
+    """Result of motion analysis in a video."""
     filename: str
     total_frames: int
     fps: float
     duration_seconds: float
     segments: list[MotionSegment]
-    motion_percentage: float  # Procent klatek z ruchem
+    motion_percentage: float  # Percentage of frames with motion
 
 
 class MotionDetectionService:
     """
-    Serwis do detekcji ruchu w nagraniach wideo.
+    Service for detecting motion in video recordings, specifically for welding processes.
     
-    Użycie:
+    Use case:
         service = MotionDetectionService()
         result = service.detect_motion("recordings/rec_20260105_120000.mp4")
         
-        # Przytnij wideo do segmentów z ruchem
+        # Trim video to segments with motion
         service.trim_to_motion("input.mp4", "output.mp4")
     """
     
     def __init__(
         self,
         recordings_dir: Path = Path("recordings"),
-        threshold: int = 25,           # Próg różnicy pikseli
-        min_area_percent: float = 0.5, # Min % powierzchni ze zmianą
-        min_segment_frames: int = 5,   # Min klatek na segment
-        padding_frames: int = 30       # Padding przed/po segmencie (0.5s @60fps)
+        threshold: int = 25,           # Pixel difference threshold
+        min_area_percent: float = 0.5, # Minimum % of area with changes
+        min_segment_frames: int = 5,   # Minimum frames per segment
+        padding_frames: int = 30       # Padding before/after segment (0.5s @60fps)
     ):
         self.recordings_dir = recordings_dir
         self.threshold = threshold
@@ -71,16 +70,16 @@ class MotionDetectionService:
         analyze_step: int = 1
     ) -> MotionAnalysisResult:
         """
-        Analizuje wideo i wykrywa segmenty z ruchem.
+        Analyzes a video and detects segments with motion.
         
         Args:
-            video_path: Ścieżka do pliku wideo
-            threshold: Próg różnicy pikseli (0-255)
-            min_area_percent: Minimalny % powierzchni ze zmianą
-            analyze_step: Co która klatka analizować (1 = każda)
+            video_path: Path to the video file
+            threshold: Pixel difference threshold (0-255)
+            min_area_percent: Minimum % of area with changes
+            analyze_step: Analyze every nth frame (1 = every frame, 2 = every second frame, etc.)
             
         Returns:
-            MotionAnalysisResult z listą segmentów
+            MotionAnalysisResult with a list of motion segments
         """
         path = self._resolve_path(video_path)
         threshold = threshold or self.threshold
@@ -97,7 +96,7 @@ class MotionDetectionService:
             
             logger.info(f"🎬 Analyzing motion in {path.name} ({total_frames} frames)")
             
-            # Wczytaj pierwszą klatkę
+            # Read the first frame to initialize
             ret, prev_frame = cap.read()
             if not ret:
                 raise ValueError("Cannot read first frame")
@@ -121,11 +120,11 @@ class MotionDetectionService:
                     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                     gray = cv2.GaussianBlur(gray, (21, 21), 0)
                     
-                    # Różnica między klatkami
+                    # Difference between frames
                     diff = cv2.absdiff(prev_gray, gray)
                     _, thresh = cv2.threshold(diff, threshold, 255, cv2.THRESH_BINARY)
                     
-                    # Policz piksele ze zmianą
+                    # Count changed pixels
                     changed_pixels = cv2.countNonZero(thresh)
                     
                     if changed_pixels >= min_changed_pixels:
@@ -135,12 +134,12 @@ class MotionDetectionService:
                 
                 frame_idx += 1
             
-            # Grupuj klatki w segmenty
+            # Group frames into segments
             segments = self._group_into_segments(motion_frames, total_frames, fps)
             
             motion_pct = (len(motion_frames) / (total_frames / analyze_step) * 100) if total_frames > 0 else 0
             
-            logger.info(f"✅ Found {len(segments)} motion segments ({motion_pct:.1f}% motion)")
+            logger.info(f"Found {len(segments)} motion segments ({motion_pct:.1f}% motion)")
             
             return MotionAnalysisResult(
                 filename=path.name,
@@ -159,7 +158,7 @@ class MotionDetectionService:
         total_frames: int,
         fps: float
     ) -> list[MotionSegment]:
-        """Grupuje klatki z ruchem w ciągłe segmenty."""
+        """Groups motion frames into continuous segments."""
         if not motion_frames:
             return []
         
@@ -167,16 +166,16 @@ class MotionDetectionService:
         start = motion_frames[0]
         end = motion_frames[0]
         
-        # Max przerwa między klatkami w jednym segmencie (0.5s)
+        # Max gap between frames in a single segment (0.5s)
         max_gap = int(fps * 0.5)
         
         for frame in motion_frames[1:]:
             if frame - end <= max_gap:
                 end = frame
             else:
-                # Dodaj padding: pełny na początku, minimalny na końcu
+                # Add padding: full at the start, minimal at the end
                 seg_start = max(0, start - self.padding_frames)
-                seg_end = min(total_frames - 1, end + 5)  # Tylko 5 klatek na końcu (~0.08s)
+                seg_end = min(total_frames - 1, end + 5)  # Only 5 frames at the end (~0.08s)
                 
                 if seg_end - seg_start >= self.min_segment_frames:
                     segments.append(MotionSegment(
@@ -190,9 +189,9 @@ class MotionDetectionService:
                 start = frame
                 end = frame
         
-        # Ostatni segment
+        # Last segment
         seg_start = max(0, start - self.padding_frames)
-        seg_end = min(total_frames - 1, end + 5)  # Tylko 5 klatek na końcu
+        seg_end = min(total_frames - 1, end + 5)  # Only 5 frames at the end
         
         if seg_end - seg_start >= self.min_segment_frames:
             segments.append(MotionSegment(
@@ -203,11 +202,11 @@ class MotionDetectionService:
                 duration_ms=(seg_end - seg_start) / fps * 1000
             ))
         
-        # Scal nakładające się segmenty
+        # Merge overlapping segments
         return self._merge_overlapping(segments, fps)
     
     def _merge_overlapping(self, segments: list[MotionSegment], fps: float) -> list[MotionSegment]:
-        """Scala nakładające się lub bliskie segmenty."""
+        """Merge overlapping or close segments."""
         if len(segments) <= 1:
             return segments
         
@@ -215,9 +214,9 @@ class MotionDetectionService:
         
         for seg in segments[1:]:
             last = merged[-1]
-            # Jeśli segmenty nakładają się lub są blisko
+            # If segments overlap or are close (within padding), merge them
             if seg.start_frame <= last.end_frame + self.padding_frames:
-                # Rozszerz ostatni segment
+                # Extend the last segment
                 merged[-1] = MotionSegment(
                     start_frame=last.start_frame,
                     end_frame=max(last.end_frame, seg.end_frame),
@@ -239,39 +238,39 @@ class MotionDetectionService:
         include_all_segments: bool = True
     ) -> dict:
         """
-        Przycina wideo do segmentów z ruchem.
+        Trims the video to motion segments.
         
         Args:
-            video_path: Ścieżka do wideo źródłowego
-            output_path: Ścieżka wyjściowa (domyślnie: {input}_trimmed.mp4)
-            threshold: Próg detekcji ruchu
-            min_area_percent: Min % powierzchni ze zmianą
-            include_all_segments: True = wszystkie segmenty, False = tylko najdłuższy
+            video_path: Path to the source video
+            output_path: Output path (default: {input}_trimmed.mp4)
+            threshold: Motion detection threshold
+            min_area_percent: Min % of area with changes
+            include_all_segments: True = all segments, False = only the longest segment
             
         Returns:
-            Słownik z informacjami o przyciętym wideo
+            Dictionary with information about the trimmed video
         """
         path = self._resolve_path(video_path)
         
-        # Wykryj segmenty
+        # Detect segments
         analysis = self.detect_motion(path, threshold, min_area_percent)
         
         if not analysis.segments:
-            logger.warning(f"⚠️ No motion detected in {path.name}")
+            logger.warning(f"No motion detected in {path.name}")
             return {
                 "status": "no_motion",
                 "filename": path.name,
                 "message": "No motion segments detected"
             }
         
-        # Wybierz segmenty
+        # Select segments
         if include_all_segments:
             segments = analysis.segments
         else:
-            # Tylko najdłuższy segment
+            # Only the longest segment
             segments = [max(analysis.segments, key=lambda s: s.duration_ms)]
         
-        # Ustal ścieżkę wyjściową
+        # Determine output path
         if output_path:
             out_path = Path(output_path)
         else:
@@ -279,7 +278,7 @@ class MotionDetectionService:
         
         out_path.parent.mkdir(parents=True, exist_ok=True)
         
-        # Otwórz źródło
+        # Open source
         cap = cv2.VideoCapture(str(path))
         if not cap.isOpened():
             raise ValueError(f"Cannot open video: {path}")
@@ -309,7 +308,7 @@ class MotionDetectionService:
             
             writer.release()
             
-            # Informacje o wyniku
+            # Information about the result
             output_size = out_path.stat().st_size / (1024 * 1024)
             original_size = path.stat().st_size / (1024 * 1024)
             
@@ -337,15 +336,15 @@ class MotionDetectionService:
         min_bright_percent: float = 2.0
     ) -> tuple[Optional[int], Optional[int]]:
         """
-        Wykrywa moment spawania (jasne światło lasera).
+        Detects the welding process (bright laser light).
         
         Args:
-            video_path: Ścieżka do pliku wideo
-            brightness_threshold: Próg jasności (0-255) dla detekcji spawania
-            min_bright_percent: Minimalny % jasnych pikseli aby uznać za spawanie
+            video_path: Path to the video file
+            brightness_threshold: Brightness threshold (0-255) for welding detection
+            min_bright_percent: Minimum % of bright pixels to consider as welding
             
         Returns:
-            (start_frame, end_frame) spawania lub (None, None) jeśli nie wykryto
+            (start_frame, end_frame) of the welding process or (None, None) if not detected
         """
         path = self._resolve_path(video_path)
         cap = cv2.VideoCapture(str(path))
@@ -355,7 +354,7 @@ class MotionDetectionService:
         
         try:
             total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            logger.info(f"🔍 Detecting welding process in {path.name}")
+            logger.info(f"Detecting welding process in {path.name}")
             
             welding_frames = []
             frame_idx = 0
@@ -365,31 +364,31 @@ class MotionDetectionService:
                 if not ret:
                     break
                 
-                # Sprawdź zarówno jasność jak i kolory (biały/żółty/czerwony laser)
+                # Check both brightness and colors (white/yellow/red laser)
                 gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                 
-                # Metoda 1: Jasne piksele
+                # Method 1: Bright pixels (laser light) - general detection
                 bright_pixels = np.sum(gray > brightness_threshold)
                 
-                # Metoda 2: Bardzo jasne piksele (białe/żółte centrum) - TYLKO dla aktywnego spawania
-                very_bright_pixels = np.sum(gray > 220)  # Podwyższony próg
+                # Method 2: Very bright pixels (white/yellow center) - ONLY for active welding
+                very_bright_pixels = np.sum(gray > 220)  # Elevated threshold
                 
-                # Metoda 3: Czerwone/pomarańczowe światło (spawanie może być czerwone)
-                # Wysokie wartości R i G, niskie B
+                # Method 3: Red/orange light (welding may be red)
+                # High R and G values, low B
                 b, g, r = cv2.split(frame)
-                red_hot = np.sum((r > 220) & (g > 180) & (b < 120))  # Bardziej restrykcyjne
+                red_hot = np.sum((r > 220) & (g > 180) & (b < 120))  # More restrictive
                 
                 total_pixels = gray.shape[0] * gray.shape[1]
                 bright_percent = (bright_pixels / total_pixels) * 100
                 very_bright_percent = (very_bright_pixels / total_pixels) * 100
                 red_hot_percent = (red_hot / total_pixels) * 100
                 
-                # Wykryj spawanie jeśli:
-                # - Dużo bardzo jasnych pikseli (aktywny laser)
-                # - LUB intensywne czerwone światło
+                # Detect welding if:
+                # - Many very bright pixels (active laser)
+                # - Or intense red light (welding glow)
                 is_welding = (
-                    very_bright_percent >= 1.0 or  # Co najmniej 1% bardzo jasnych (aktywny laser)
-                    red_hot_percent >= 3.0  # Lub 3% intensywnie czerwonych
+                    very_bright_percent >= 1.0 or  # At least 1% very bright (active laser)
+                    red_hot_percent >= 3.0  # Or 3% intense red (welding glow) - increased from 2% to 3%
                 )
                 
                 if is_welding:
@@ -398,32 +397,32 @@ class MotionDetectionService:
                 frame_idx += 1
             
             if not welding_frames:
-                logger.info("❌ No welding process detected")
+                logger.info("No welding process detected")
                 return None, None
             
-            # Znajdź ciągły segment spawania - grupuj klatki z tolerancją
-            # Jeśli przerwa > 10 klatek (0.3s), to traktuj jako koniec spawania
-            gap_tolerance = 10  # Zmniejszone z 30 na 10
+            # Find continuous welding segment - group frames with tolerance
+            # If gap > 10 frames (0.3s), consider it as end of welding
+            gap_tolerance = 10  # Reduced from 30 to 10
             segments = []
             current_start = welding_frames[0]
             prev_frame = welding_frames[0]
             
             for frame in welding_frames[1:]:
                 if frame - prev_frame > gap_tolerance:
-                    # Koniec obecnego segmentu
+                    # End of current segment
                     segments.append((current_start, prev_frame))
                     current_start = frame
                 prev_frame = frame
             
-            # Dodaj ostatni segment
+            # Add the last segment
             segments.append((current_start, prev_frame))
             
-            # Wybierz najdłuższy segment (główny proces spawania)
+            # Choose the longest segment (main welding process)
             if segments:
                 longest_segment = max(segments, key=lambda s: s[1] - s[0])
                 start_frame, end_frame = longest_segment
                 
-                logger.info(f"✅ Welding detected: frames {start_frame}-{end_frame} ({len(welding_frames)} frames total, {len(segments)} segments)")
+                logger.info(f"Welding detected: frames {start_frame}-{end_frame} ({len(welding_frames)} frames total, {len(segments)} segments)")
                 return start_frame, end_frame
             
             return None, None
@@ -439,28 +438,28 @@ class MotionDetectionService:
         min_bright_percent: float = 2.0
     ) -> dict:
         """
-        Przycina wideo usuwając TYLKO proces spawania (jasne światło).
-        Zachowuje wszystko przed i po spawaniu.
+        Trim video by removing ONLY the welding process (bright light).
+        Keeps everything before and after welding.
         
         Args:
-            video_path: Ścieżka do wideo wejściowego
-            output_path: Ścieżka wyjściowa (opcjonalna)
-            brightness_threshold: Próg jasności dla detekcji spawania
-            min_bright_percent: Minimalny % jasnych pikseli
+            video_path: Path to the input video
+            output_path: Path to the output video (optional, default: {input}_postprocess.mp4)
+            brightness_threshold: Brightness threshold for welding detection
+            min_bright_percent: Minimum % of bright pixels to consider as welding
             
         Returns:
-            Dict z informacjami o wyniku
+            Dict with information about the result
         """
         path = self._resolve_path(video_path)
         
-        # Wykryj moment spawania
+        # Detect welding moment
         weld_start, weld_end = self.detect_welding_process(
             path, 
             brightness_threshold=brightness_threshold,
             min_bright_percent=min_bright_percent
         )
         
-        # Ustal ścieżkę wyjściową
+        # Set output path
         if output_path is None:
             stem = path.stem
             output_path = path.parent / f"{stem}_postprocess.mp4"
@@ -475,44 +474,44 @@ class MotionDetectionService:
             width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             
-            # Jeśli nie wykryto spawania, zachowaj całe wideo
+            # If no welding detected, keep the entire video
             if weld_start is None or weld_end is None:
                 logger.warning("No welding detected - keeping entire video")
                 segments = [(0, total_frames - 1)]
             else:
-                # Dodaj buffer tylko na POCZĄTKU spawania (1 klatka)
-                # Koniec zostawiamy dokładny - moment zgaśnięcia lasera
+                # Add buffer only at the START of welding (1 frame)
+                # Keep the end exact - moment of laser shutdown
                 buffer_frames = 1
                 weld_start_buffered = max(0, weld_start - buffer_frames)
-                weld_end_buffered = weld_end  # Bez bufora na końcu!
+                weld_end_buffered = weld_end  # No buffer at the end
                 
-                # Sprawdź czy spawanie zajmuje większość wideo (>80%)
+                # Check if welding occupies most of the video (>80%)
                 weld_duration = weld_end_buffered - weld_start_buffered + 1
                 weld_percent = (weld_duration / total_frames) * 100
                 
                 if weld_percent > 80:
-                    # Spawanie wykryte w prawie całym wideo
-                    # Prawdopodobnie gotowy spaw też jest wykrywany jako jasny
-                    # Zachowaj drugą połowę wideo (post-processing/inspekcja)
+                    # Welding detected in almost the entire video - likely a false positive or very short pre/post footage
+                    # Probably the finished weld is also detected as bright
+                    # Keep the second half of the video (post-processing/inspection footage)
                     logger.warning(f"Welding detected in {weld_percent:.1f}% of video - keeping second half")
                     segments = [(total_frames // 2, total_frames - 1)]
                 elif weld_end_buffered >= total_frames - 1:
-                    # Spawanie do końca wideo - zachowaj tylko początek
+                    # Welding extends to the end of the video - keep only the beginning
                     logger.info("Welding extends to end - keeping only pre-weld footage")
                     segments = [(0, weld_start_buffered - 1)] if weld_start_buffered > 0 else []
                     if not segments:
                         logger.warning("No frames before welding - keeping second half anyway")
                         segments = [(total_frames // 2, total_frames - 1)]
                 else:
-                    # Normalna sytuacja: zachowaj przed i po spawaniu
+                    # Normal situation: keep pre- and post-weld segments
                     segments = []
                     
-                    # Segment PRZED spawaniem (jeśli istnieje)
+                    # Segment BEFORE welding (if exists)
                     if weld_start_buffered > 0:
                         segments.append((0, weld_start_buffered - 1))
                         logger.info(f"Keeping pre-weld segment: frames 0-{weld_start_buffered - 1}")
                     
-                    # Segment PO spawaniu (jeśli istnieje)
+                    # Segment AFTER welding (if exists)
                     if weld_end_buffered < total_frames - 1:
                         segments.append((weld_end_buffered + 1, total_frames - 1))
                         logger.info(f"Keeping post-weld segment: frames {weld_end_buffered + 1}-{total_frames - 1}")
@@ -523,14 +522,14 @@ class MotionDetectionService:
                 
                 logger.info(f"Removing welding frames {weld_start_buffered}-{weld_end_buffered} (detected: {weld_start}-{weld_end}, buffer: {buffer_frames})")
             
-            # Twórz writer
+            # Create writer
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # type: ignore
             writer = cv2.VideoWriter(str(output_path), fourcc, fps, (width, height))
             
             if not writer.isOpened():
                 raise RuntimeError(f"Cannot create output video: {output_path}")
             
-            # Zapisz wszystkie segmenty
+            # Save all segments
             frames_written = 0
             for start_frame, end_frame in segments:
                 cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
@@ -544,13 +543,13 @@ class MotionDetectionService:
             
             writer.release()
             
-            # Informacje o wyniku
+            # Information about the result
             output_size = output_path.stat().st_size / (1024 * 1024)
             original_size = path.stat().st_size / (1024 * 1024)
             
             frames_removed = total_frames - frames_written
             
-            logger.info(f"✅ Welding removed: {frames_written} frames kept, {frames_removed} removed ({frames_written/fps:.1f}s)")
+            logger.info(f"Welding removed: {frames_written} frames kept, {frames_removed} removed ({frames_written/fps:.1f}s)")
             
             return {
                 "status": "completed",
@@ -570,21 +569,21 @@ class MotionDetectionService:
             cap.release()
     
     def _resolve_path(self, video_path: str | Path) -> Path:
-        """Rozwiązuje ścieżkę do pliku wideo."""
+        """Resolves the path to the video file."""
         path = Path(video_path)
-        # Jeśli ścieżka absolutna lub już istnieje - użyj jej
+        # If the path is absolute or already exists - use it
         if path.is_absolute() or path.exists():
             return path
-        # W przeciwnym razie szukaj w recordings_dir
+        # Otherwise, look in recordings_dir
         return self.recordings_dir / path
 
 
-# Singleton dla FastAPI dependency injection
+# Singleton for FastAPI dependency injection
 _motion_detection_service: Optional[MotionDetectionService] = None
 
 
 def get_motion_detection_service() -> MotionDetectionService:
-    """FastAPI dependency - zwraca singleton MotionDetectionService."""
+    """FastAPI dependency - returns the singleton MotionDetectionService."""
     global _motion_detection_service
     if _motion_detection_service is None:
         _motion_detection_service = MotionDetectionService()

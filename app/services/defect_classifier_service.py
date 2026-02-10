@@ -1,6 +1,7 @@
 """
-Defect Classifier Service - Klasyfikacja typów wad spawalniczych
-Rozszerzenie ML Classification Service dla multi-class defect detection
+Defect Classifier Service - calssify welding defects into 9 categories using EfficientNet-B0
+Extension ML Classification Service to handle defect-specific logic, dataset, and model architecture. 
+Provides training and prediction capabilities with Grad-CAM visualization.
 """
 
 import json
@@ -21,7 +22,7 @@ from app.services.ml_classification_service import MLClassificationService
 logger = logging.getLogger(__name__)
 
 
-# Typy defektów - zgodne z labeling_service.py
+# Types of welding defects we want to classify
 DEFECT_CLASSES = [
     'porosity',        # 0
     'crack',           # 1
@@ -36,14 +37,14 @@ DEFECT_CLASSES = [
 
 
 class DefectDataset(Dataset):
-    """Dataset dla klasyfikacji typów defektów"""
+    """Dataset for classifying types of welding defects"""
     
     def __init__(self, data_dir: Path, transform=None, available_classes=None):
         self.data_dir = Path(data_dir) / "defects"
         self.transform = transform
         self.samples = []
         
-        # Użyj tylko dostępnych klas (z danymi)
+        # Use only available classes (with data)
         self.classes = available_classes if available_classes else DEFECT_CLASSES
         
         for class_idx, class_name in enumerate(self.classes):
@@ -74,10 +75,10 @@ class DefectDataset(Dataset):
 
 
 class DefectClassifierService(MLClassificationService):
-    """Serwis do klasyfikacji typów defektów spawalniczych (9 klas)"""
+    """Service for classifying types of welding defects (9 classes)"""
     
     def __init__(self):
-        # Nie wywołujemy super().__init__ - inicjalizujemy ręcznie
+        # Do not call super().__init__ - initialize manually
         self.models_dir = Path("models/defects")
         self.labels_dir = Path("labels")
         self.training_data_dir = self.labels_dir / "training_data"
@@ -97,26 +98,26 @@ class DefectClassifierService(MLClassificationService):
         ])
         
         self.training_info_path = self.models_dir / "training_info.json"
-        self.num_classes = None  # Będzie ustawione dynamicznie podczas treningu
-        self.class_names = []  # Będzie ustawione dynamicznie podczas treningu
+        self.num_classes = None  # Will be set dynamically during training
+        self.class_names = []  # Will be set dynamically during training
         
         logger.info(f"Defect Classifier Service initialized. Device: {self.device}")
         
-        # Załaduj model dla defektów jeśli istnieje
+        # Load defect model if it exists
         if self.load_model("defect_classifier.pth"):
             logger.info("✅ Loaded defect classifier successfully")
         else:
             logger.info("ℹ️ No defect classifier found, will need to train first")
     
     def create_model(self) -> nn.Module:
-        """Stwórz model EfficientNet-B0 dla klasyfikacji defektów"""
+        """Create EfficientNet-B0 model for defect classification"""
         if self.num_classes is None:
             raise ValueError("num_classes not set. Train the model first or load existing model.")
         model = timm.create_model('efficientnet_b0', pretrained=True, num_classes=self.num_classes)
         return model.to(self.device)
     
     def get_training_data_stats(self) -> Dict[str, Any]:
-        """Pobierz statystyki danych treningowych dla defektów"""
+        """Get training data statistics for defects"""
         defects_dir = self.training_data_dir / "defects"
         
         class_counts = {}
@@ -130,7 +131,7 @@ class DefectClassifierService(MLClassificationService):
             class_counts[defect_type] = count
             total += count
         
-        # Tylko klasy z danymi
+        # Only classes with data
         available_classes = {k: v for k, v in class_counts.items() if v > 0}
         min_samples = min(available_classes.values()) if available_classes else 0
         num_available_classes = len(available_classes)
@@ -152,20 +153,20 @@ class DefectClassifierService(MLClassificationService):
         validation_split: float = 0.2,
         augment: bool = True
     ) -> Dict[str, Any]:
-        """Trenuj model klasyfikacji defektów"""
+        """Train defect classification model"""
         
         stats = self.get_training_data_stats()
         if not stats["ready_for_training"]:
             raise ValueError(f"Insufficient training data. Need at least 10 samples per class (with data), "
                            f"2+ classes, and 50 total. Current: {stats['class_counts']}")
         
-        # Ustaw klasy dynamicznie
+        # Set classes dynamically
         self.class_names = stats['available_classes']
         self.num_classes = len(self.class_names)
         
         logger.info(f"Starting defect classification training with {stats['total_samples']} samples")
         
-        # Użyj DefectDataset zamiast WeldDataset
+        # Use DefectDataset instead of WeldDataset
         from torchvision import transforms
         from torch.utils.data import DataLoader
         
@@ -262,7 +263,7 @@ class DefectClassifierService(MLClassificationService):
         
         self._save_model("defect_classifier.pth")
         
-        # Zapisz info o treningu
+        # save training info
         import json
         from datetime import datetime
         
@@ -288,20 +289,27 @@ class DefectClassifierService(MLClassificationService):
         return history
     
     def predict(self, image, with_gradcam: bool = True) -> Dict[str, Any]:
-        """Wykonaj predykcję typu defektu"""
-        if not self.model:
+        """Perform defect type prediction"""
+        if self.model is None:
             if not self.load_model("defect_classifier.pth"):
                 raise RuntimeError("No defect classifier available. Train first.")
         
+        if self.model is None:
+            raise RuntimeError("Failed to load or initialize model for prediction.")
+        
         import numpy as np
         
-        # Konwertuj do RGB
+        # Convert to RGB
         if len(image.shape) == 2:
             image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
         else:
             image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         
-        input_tensor = self.transform(image).unsqueeze(0).to(self.device)
+        transformed = self.transform(image)
+        if not isinstance(transformed, torch.Tensor):
+            from torchvision.transforms import ToTensor
+            transformed = ToTensor()(transformed)
+        input_tensor = transformed.unsqueeze(0).to(self.device)
         
         self.model.eval()
         with torch.set_grad_enabled(with_gradcam):
@@ -309,7 +317,7 @@ class DefectClassifierService(MLClassificationService):
             probabilities = torch.nn.functional.softmax(outputs, dim=1)
             
             confidence, predicted = probabilities.max(1)
-            predicted_class = self.class_names[predicted.item()]
+            predicted_class = self.class_names[int(predicted.item())]
         
         result = {
             "prediction": predicted_class,
@@ -330,7 +338,7 @@ class DefectClassifierService(MLClassificationService):
         return result
     
     def _save_model(self, filename: str):
-        """Zapisz model klasyfikacji defektów"""
+        """Save defect classification model"""
         if self.model:
             path = self.models_dir / filename
             torch.save({
@@ -342,7 +350,7 @@ class DefectClassifierService(MLClassificationService):
             logger.info(f"Defect classifier saved to {path}")
     
     def load_model(self, filename: str = "defect_classifier.pth") -> bool:
-        """Wczytaj model klasyfikacji defektów"""
+        """Load defect classification model"""
         path = self.models_dir / filename
         if not path.exists():
             logger.warning(f"Defect classifier not found: {path}")
@@ -350,7 +358,7 @@ class DefectClassifierService(MLClassificationService):
         
         try:
             checkpoint = torch.load(path, map_location=self.device)
-            # Załaduj zapisane klasy i liczbę klas
+            # Load saved classes and number of classes
             self.class_names = checkpoint.get('class_names', DEFECT_CLASSES)
             self.num_classes = checkpoint.get('num_classes', len(self.class_names))
             self.model = self.create_model()
@@ -366,10 +374,18 @@ class DefectClassifierService(MLClassificationService):
             return False
     
     def _setup_gradcam(self):
-        """Zainicjuj Grad-CAM z ostatnią warstwą konwolucyjną"""
+        """Initialize Grad-CAM with the last convolutional layer"""
         if self.model:
             from app.services.ml_classification_service import GradCAM
-            target_layer = self.model.conv_head if hasattr(self.model, 'conv_head') else self.model.features[-1]
+            # For EfficientNet models, use conv_head or the last layer in features
+            target_layer: nn.Module
+            if hasattr(self.model, 'conv_head') and isinstance(self.model.conv_head, nn.Module):
+                target_layer = self.model.conv_head
+            elif hasattr(self.model, 'features') and isinstance(self.model.features, nn.Module):
+                target_layer = self.model.features
+            else:
+                # Fallback to the model itself
+                target_layer = self.model
             self.grad_cam = GradCAM(self.model, target_layer)
             logger.info("Grad-CAM initialized for defect classifier")
 
@@ -378,7 +394,7 @@ class DefectClassifierService(MLClassificationService):
 _defect_service_instance = None
 
 def get_defect_classifier_service() -> DefectClassifierService:
-    """Pobierz singleton DefectClassifierService"""
+    """Get singleton DefectClassifierService"""
     global _defect_service_instance
     if _defect_service_instance is None:
         _defect_service_instance = DefectClassifierService()

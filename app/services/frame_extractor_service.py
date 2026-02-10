@@ -1,8 +1,6 @@
 """
-Frame Extractor Service - ekstrakcja klatek z nagrań wideo.
-
-Serwis do wczytywania klatek z plików MP4 do pamięci (lista numpy arrays)
-oraz opcjonalnego zapisu do folderu jako JPEG.
+Frame Extractor Service - extracts frames from MP4 video files into memory (list of numpy arrays)
+and optionally saves them to a folder as JPEGs. Uses OpenCV for video processing.
 """
 
 import cv2  # type: ignore
@@ -17,17 +15,17 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class FrameData:
-    """Dane klatki z metadanymi."""
-    index: int           # Numer klatki (0-based)
-    frame: np.ndarray    # Obraz BGR jako numpy array
-    timestamp_ms: float  # Pozycja w milisekundach
+    """Frame data with metadata."""
+    index: int           # Frame number (0-based)
+    frame: np.ndarray    # BGR image as numpy array
+    timestamp_ms: float  # Position in milliseconds
 
 
 class FrameExtractorService:
     """
-    Serwis do ekstrakcji klatek z plików wideo.
+    Service for extracting frames from video files.
     
-    Użycie:
+    Usage:
         extractor = FrameExtractorService()
         frames = extractor.extract_frames("recordings/rec_20260105_120000.mp4")
         extractor.save_frames_to_folder(frames, "output/frames")
@@ -44,19 +42,19 @@ class FrameExtractorService:
         max_frames: Optional[int] = None
     ) -> list[FrameData]:
         """
-        Ekstrahuje klatki z pliku wideo do pamięci.
+        Extract frames from a video file into memory.
         
         Args:
-            video_path: Ścieżka do pliku wideo (absolutna lub względna do recordings_dir)
-            step: Co która klatka ma być pobrana (1 = każda, 2 = co druga, itd.)
-            max_frames: Maksymalna liczba klatek do pobrania (None = wszystkie)
+            video_path: Path to the video file (absolute or relative to recordings_dir)
+            step: Extract every N-th frame (1 = every frame, 2 = every second frame, etc.)
+            max_frames: Maximum number of frames to extract (None = all)
             
         Returns:
-            Lista FrameData z klatkami i metadanymi
+            List of FrameData with frames and metadata
             
         Raises:
-            FileNotFoundError: Gdy plik nie istnieje
-            ValueError: Gdy nie można otworzyć pliku jako wideo
+            FileNotFoundError: If the file does not exist
+            ValueError: If the file cannot be opened as a video
         """
         path = self._resolve_path(video_path)
         
@@ -75,14 +73,14 @@ class FrameExtractorService:
             total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
             fps = cap.get(cv2.CAP_PROP_FPS)
             
-            logger.info(f"📹 Extracting frames from {path.name} ({total_frames} frames, {fps:.1f} fps)")
+            logger.info(f"Extracting frames from {path.name} ({total_frames} frames, {fps:.1f} fps)")
             
             while True:
                 ret, frame = cap.read()
                 if not ret:
                     break
                 
-                # Pobierz tylko co N-tą klatkę
+                # Extract only every N-th frame
                 if frame_index % step == 0:
                     timestamp_ms = cap.get(cv2.CAP_PROP_POS_MSEC)
                     frames.append(FrameData(
@@ -97,7 +95,7 @@ class FrameExtractorService:
                 
                 frame_index += 1
             
-            logger.info(f"✅ Extracted {len(frames)} frames (step={step})")
+            logger.info(f"Extracted {len(frames)} frames (step={step})")
             return frames
             
         finally:
@@ -105,14 +103,14 @@ class FrameExtractorService:
     
     def get_frame(self, filename: str, frame_index: int) -> Optional[np.ndarray]:
         """
-        Pobierz pojedynczą klatkę z wideo.
+        Get a single frame from a video.
         
         Args:
-            filename: Nazwa pliku wideo
-            frame_index: Indeks klatki
+            filename: Name of the video file
+            frame_index: Index of the frame
             
         Returns:
-            Klatka jako numpy array (BGR) lub None jeśli nie znaleziono
+            Frame as a numpy array (BGR) or None if not found
         """
         video_path = self.recordings_dir / filename
         if not video_path.exists():
@@ -142,10 +140,10 @@ class FrameExtractorService:
         step: int = 1
     ) -> Generator[FrameData, None, None]:
         """
-        Generator klatek - dla dużych plików (oszczędza RAM).
+        Frame generator - for large files (saves RAM).
         
         Yields:
-            FrameData z kolejnymi klatkami
+            FrameData with consecutive frames
         """
         path = self._resolve_path(video_path)
         
@@ -183,16 +181,16 @@ class FrameExtractorService:
         jpeg_quality: int = 95
     ) -> list[Path]:
         """
-        Zapisuje klatki jako pliki JPEG.
+        Save frames as JPEG files.
         
         Args:
-            frames: Lista FrameData do zapisania
-            output_dir: Folder docelowy (zostanie utworzony jeśli nie istnieje)
-            prefix: Prefix nazwy pliku (np. "frame" -> "frame_00001.jpg")
-            jpeg_quality: Jakość JPEG (1-100)
+            frames: List of FrameData to save
+            output_dir: Target folder (will be created if it doesn't exist)
+            prefix: File name prefix (e.g., "frame" -> "frame_00001.jpg")
+            jpeg_quality: JPEG quality (1-100)
             
         Returns:
-            Lista ścieżek do zapisanych plików
+            List of paths to the saved files
         """
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
@@ -210,15 +208,15 @@ class FrameExtractorService:
             )
             saved_files.append(filepath)
         
-        logger.info(f"💾 Saved {len(saved_files)} frames to {output_path}")
+        logger.info(f"Saved {len(saved_files)} frames to {output_path}")
         return saved_files
     
     def get_video_info(self, video_path: str | Path) -> dict:
         """
-        Pobiera informacje o pliku wideo.
+        Get video file information.
         
         Returns:
-            Dict z: frame_count, fps, width, height, duration_seconds
+            Dict with: frame_count, fps, width, height, duration_seconds
         """
         path = self._resolve_path(video_path)
         
@@ -247,16 +245,16 @@ class FrameExtractorService:
             cap.release()
     
     def _resolve_path(self, video_path: str | Path) -> Path:
-        """Rozwiązuje ścieżkę - absolutna lub względna do recordings_dir."""
+        """Resolve path - absolute or relative to recordings_dir."""
         path = Path(video_path)
         if path.is_absolute():
             return path
         
-        # Najpierw sprawdź czy istnieje względna do CWD
+        # First, check if it exists relative to CWD
         if path.exists():
             return path
         
-        # Potem względna do recordings_dir
+        # Then, relative to recordings_dir
         return self.recordings_dir / path
 
 
@@ -265,7 +263,7 @@ _frame_extractor_service: Optional[FrameExtractorService] = None
 
 
 def get_frame_extractor_service() -> FrameExtractorService:
-    """Singleton getter dla FrameExtractorService."""
+    """Singleton getter for FrameExtractorService."""
     global _frame_extractor_service
     if _frame_extractor_service is None:
         _frame_extractor_service = FrameExtractorService()

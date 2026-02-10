@@ -1,4 +1,4 @@
-"""Pydantic models dla API."""
+"""Pydantic models for API."""
 
 from pydantic import BaseModel
 from typing import Optional, List
@@ -60,7 +60,7 @@ class CameraSettingsRequest(BaseModel):
 # ============== FRAME EXTRACTION ==============
 
 class VideoInfoResponse(BaseModel):
-    """Informacje o pliku wideo."""
+    """Information about a video file."""
     filename: str
     frame_count: int
     fps: float
@@ -70,16 +70,16 @@ class VideoInfoResponse(BaseModel):
 
 
 class ExtractFramesRequest(BaseModel):
-    """Request do ekstrakcji klatek."""
-    step: int = 1              # Co która klatka (1 = każda)
-    max_frames: Optional[int] = None  # Limit klatek
-    output_folder: Optional[str] = None  # Folder docelowy (domyślnie: frames/{filename}/)
-    prefix: str = "frame"      # Prefix nazwy pliku
-    jpeg_quality: int = 95     # Jakość JPEG
+    """Request for frame extraction."""
+    step: int = 1              # Every N-th frame (1 = every frame)
+    max_frames: Optional[int] = None  # Maximum number of frames
+    output_folder: Optional[str] = None  # Output folder (default: frames/{filename}/)
+    prefix: str = "frame"      # File name prefix
+    jpeg_quality: int = 95     # JPEG quality
 
 
 class ExtractFramesResponse(BaseModel):
-    """Response z wynikiem ekstrakcji."""
+    """Response with extraction results."""
     status: str
     filename: str
     frames_extracted: int
@@ -88,7 +88,7 @@ class ExtractFramesResponse(BaseModel):
 
 
 class FrameResponse(BaseModel):
-    """Informacje o pojedynczej klatce."""
+    """Information about a single frame."""
     index: int
     timestamp_ms: float
     width: int
@@ -98,7 +98,7 @@ class FrameResponse(BaseModel):
 # ============== MOTION DETECTION ==============
 
 class MotionSegmentResponse(BaseModel):
-    """Segment wideo z wykrytym ruchem."""
+    """Video segment with detected motion."""
     start_frame: int
     end_frame: int
     start_time_ms: float
@@ -107,7 +107,7 @@ class MotionSegmentResponse(BaseModel):
 
 
 class MotionAnalysisResponse(BaseModel):
-    """Wynik analizy ruchu w wideo."""
+    """Result of motion analysis in a video."""
     filename: str
     total_frames: int
     fps: float
@@ -117,15 +117,15 @@ class MotionAnalysisResponse(BaseModel):
 
 
 class TrimToMotionRequest(BaseModel):
-    """Request do przycinania wideo."""
-    threshold: Optional[int] = None       # Próg detekcji (0-255)
-    min_area_percent: Optional[float] = None  # Min % powierzchni ze zmianą
-    include_all_segments: bool = True     # True = wszystkie, False = najdłuższy
-    output_filename: Optional[str] = None # Nazwa pliku wyjściowego
+    """Request for trimming a video based on motion detection."""
+    threshold: Optional[int] = None       # Detection threshold (0-255)
+    min_area_percent: Optional[float] = None  # Min % of area with changes
+    include_all_segments: bool = True     # True = all, False = longest
+    output_filename: Optional[str] = None # Output file name
 
 
 class TrimToMotionResponse(BaseModel):
-    """Response z wynikiem przycinania."""
+    """Response with trimming results."""
     status: str
     input_filename: str
     output_filename: Optional[str] = None
@@ -142,20 +142,20 @@ class TrimToMotionResponse(BaseModel):
 # ============== IMAGE ENHANCEMENT ==============
 
 class EnhancementPresetEnum(str, Enum):
-    """Dostępne presety przetwarzania obrazu."""
-    ORIGINAL = "original"           # Bez zmian
-    WELD_ENHANCE = "weld_enhance"   # Najlepszy dla spawów
-    HIGH_CONTRAST = "high_contrast" # Mocny kontrast
-    EDGE_OVERLAY = "edge_overlay"   # Krawędzie spawu kolorowo
-    HEATMAP = "heatmap"             # Pseudokolory
-    DENOISE = "denoise"             # Redukcja szumu
+    """Available image enhancement presets."""
+    ORIGINAL = "original"           # No changes
+    WELD_ENHANCE = "weld_enhance"   # Best for welds
+    HIGH_CONTRAST = "high_contrast" # Strong contrast
+    EDGE_OVERLAY = "edge_overlay"   # Colored weld edges
+    HEATMAP = "heatmap"             # Pseudocolors
+    DENOISE = "denoise"             # Noise reduction
 
 
 class ImageEnhancementParams(BaseModel):
-    """Parametry przetwarzania obrazu - do ręcznego dostrajania."""
+    """Image enhancement parameters - for manual tuning."""
     # CLAHE
-    clahe: Optional[float] = None        # clip_limit (1.0-4.0), None = wyłączone
-    clahe_grid: int = 8                  # Rozmiar siatki
+    clahe: Optional[float] = None        # clip_limit (1.0-4.0), None = disabled
+    clahe_grid: int = 8                  # Grid size
     
     # Sharpening
     sharpen: Optional[float] = None      # amount (0.5-3.0)
@@ -165,17 +165,17 @@ class ImageEnhancementParams(BaseModel):
     unsharp_radius: float = 1.0
     
     # Gamma
-    gamma: Optional[float] = None        # <1 ciemniej, >1 jaśniej
+    gamma: Optional[float] = None        # <1 darker, >1 brighter
     
     # Contrast/Brightness
     contrast: Optional[float] = None     # alpha (1.0-3.0)
-    brightness: int = 0                  # beta (-100 do 100)
+    brightness: int = 0                  # beta (-100 to 100)
     
     # Denoise
     denoise: Optional[int] = None        # strength (5-15)
     
     # Edge overlay
-    edges: bool = False                  # Włącz nakładkę krawędzi
+    edges: bool = False                  # Enable edge overlay
     edge_color: str = "green"            # green, red, blue, yellow
     
     # Heatmap
@@ -183,7 +183,7 @@ class ImageEnhancementParams(BaseModel):
 
 
 class EnhancementPresetsResponse(BaseModel):
-    """Lista dostępnych presetów i opcji."""
+    """List of available presets and options."""
     presets: List[str]
     colormaps: List[str]
     edge_colors: List[str]
@@ -192,35 +192,35 @@ class EnhancementPresetsResponse(BaseModel):
 # ============== LABELING ==============
 
 class LabelType(str, Enum):
-    """Typ etykiety."""
+    """Label type."""
     OK = "ok"
     NOK = "nok"
     SKIP = "skip"
 
 
 class DefectType(str, Enum):
-    """Typ wady spawu (gdy etykieta = NOK)."""
-    POROSITY = "porosity"           # Porowatość - pęcherzyki gazu
-    CRACK = "crack"                 # Pęknięcia
-    LACK_OF_FUSION = "lack_of_fusion"  # Brak przetopu
-    UNDERCUT = "undercut"           # Podtopienia przy krawędzi
-    BURN_THROUGH = "burn_through"   # Przepalenie
-    SPATTER = "spatter"             # Rozpryski
-    IRREGULAR_BEAD = "irregular_bead"  # Nierówna spoina
-    CONTAMINATION = "contamination" # Zanieczyszczenia
-    OTHER = "other"                 # Inna wada
+    """Type of weld defect (when label = NOK)."""
+    POROSITY = "porosity"           # Porosity - gas bubbles
+    CRACK = "crack"                 # Cracks
+    LACK_OF_FUSION = "lack_of_fusion"  # Lack of fusion
+    UNDERCUT = "undercut"           # Undercut at the edge
+    BURN_THROUGH = "burn_through"   # Burn through
+    SPATTER = "spatter"             # Spatter
+    IRREGULAR_BEAD = "irregular_bead"  # Irregular bead
+    CONTAMINATION = "contamination" # Contamination
+    OTHER = "other"                 # Other defect
 
 
 class AddLabelRequest(BaseModel):
-    """Request do dodania etykiety."""
+    """Request to add a label."""
     label: LabelType
-    defect_type: Optional[DefectType] = None  # Wymagane gdy label=nok
+    defect_type: Optional[DefectType] = None  # Required when label=nok
     notes: str = ""
     filters_used: Optional[dict] = None
 
 
 class FrameLabelResponse(BaseModel):
-    """Odpowiedź z etykietą klatki."""
+    """Response with frame label."""
     video_filename: str
     frame_index: int
     label: str
@@ -230,17 +230,17 @@ class FrameLabelResponse(BaseModel):
 
 
 class LabelingStatsResponse(BaseModel):
-    """Statystyki etykietowania."""
+    """Labeling statistics."""
     total_labeled: int
     ok_count: int
     nok_count: int
     skip_count: int
     videos_labeled: int
-    defect_counts: Optional[dict] = None  # Liczba każdego typu wady
+    defect_counts: Optional[dict] = None  # number of each defect type
 
 
 class TrainingDataResponse(BaseModel):
-    """Informacje o danych treningowych."""
+    """Training data information."""
     training_data_path: str
     ok_count: int
     nok_count: int

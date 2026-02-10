@@ -1,6 +1,6 @@
 """
-ML Classification Service - Wykrywanie defektów spawów
-EfficientNet-B0 + Grad-CAM dla wizualizacji uwagi modelu
+ML Classification Service - defect detection in welds
+EfficientNet-B0 + Grad-CAM for model attention visualization
 """
 
 import json
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 class WeldDataset(Dataset):
-    """Dataset dla zdjęć spawów OK/NOK"""
+    """Dataset for OK/NOK weld images"""
     
     def __init__(self, data_dir: Path, transform=None):
         self.data_dir = Path(data_dir)
@@ -58,7 +58,7 @@ class WeldDataset(Dataset):
 
 
 class GradCAM:
-    """Grad-CAM dla wizualizacji obszarów uwagi"""
+    """Grad-CAM for visualizing model attention"""
     
     def __init__(self, model: nn.Module, target_layer: nn.Module):
         self.model = model
@@ -76,7 +76,7 @@ class GradCAM:
         self.gradients = grad_output[0].detach()
     
     def generate(self, input_tensor: torch.Tensor, target_class: Optional[int] = None) -> np.ndarray:
-        """Generuj heatmapę Grad-CAM"""
+        """Generate Grad-CAM heatmap for the given input and target class"""
         self.model.eval()
         
         output = self.model(input_tensor)
@@ -109,7 +109,7 @@ class GradCAM:
 
 
 class MLClassificationService:
-    """Serwis do klasyfikacji spawów OK/NOK z Grad-CAM"""
+    """Service for OK/NOK weld classification with Grad-CAM"""
     
     def __init__(self, models_dir: str = "models", labels_dir: str = "labels"):
         self.models_dir = Path(models_dir)
@@ -133,14 +133,14 @@ class MLClassificationService:
         
         logger.info(f"ML Service initialized. Device: {self.device}")
         
-        # Automatycznie załaduj ostatni model jeśli istnieje
+        # Automatically load the latest model if it exists
         if self.load_model("latest_model.pth"):
-            logger.info("✅ Loaded latest model successfully")
+            logger.info("Loaded latest model successfully")
         else:
-            logger.info("ℹ️ No pretrained model found, will need to train first")
+            logger.info("No pretrained model found, will need to train first")
     
     def get_training_data_stats(self) -> Dict[str, Any]:
-        """Pobierz statystyki danych treningowych"""
+        """Get training data statistics"""
         ok_dir = self.training_data_dir / "ok"
         nok_dir = self.training_data_dir / "nok"
         
@@ -157,7 +157,7 @@ class MLClassificationService:
         }
     
     def create_model(self) -> nn.Module:
-        """Stwórz model EfficientNet-B0 dla klasyfikacji binarnej"""
+        """Create EfficientNet-B0 model for binary classification"""
         model = timm.create_model('efficientnet_b0', pretrained=True, num_classes=2)
         return model.to(self.device)
     
@@ -169,7 +169,7 @@ class MLClassificationService:
         validation_split: float = 0.2,
         augment: bool = True
     ) -> Dict[str, Any]:
-        """Trenuj model na zebranych danych"""
+        """Train the model on the collected data"""
         
         stats = self.get_training_data_stats()
         if not stats["ready_for_training"]:
@@ -178,7 +178,7 @@ class MLClassificationService:
         
         logger.info(f"Starting training with {stats['total_samples']} samples")
         
-        # Transformacje
+        # Transformations
         train_transform = transforms.Compose([
             transforms.ToPILImage(),
             transforms.Resize((256, 256)),
@@ -307,7 +307,7 @@ class MLClassificationService:
         return history
     
     def _save_model(self, filename: str):
-        """Zapisz model PyTorch"""
+        """Save the current model state to a file"""
         if self.model:
             path = self.models_dir / filename
             torch.save({
@@ -318,7 +318,7 @@ class MLClassificationService:
             logger.info(f"Model saved to {path}")
     
     def load_model(self, filename: str = "latest_model.pth") -> bool:
-        """Wczytaj model"""
+        """Load a model from a file"""
         path = self.models_dir / filename
         if not path.exists():
             logger.warning(f"Model not found: {path}")
@@ -339,7 +339,7 @@ class MLClassificationService:
             return False
     
     def _setup_gradcam(self):
-        """Zainicjuj Grad-CAM z ostatnią warstwą konwolucyjną"""
+        """Initialize Grad-CAM with the last convolutional layer"""
         if self.model:
             if hasattr(self.model, 'conv_head') and isinstance(self.model.conv_head, nn.Module):
                 target_layer = self.model.conv_head
@@ -362,7 +362,7 @@ class MLClassificationService:
             logger.info("Grad-CAM initialized")
     
     def predict(self, image: np.ndarray, with_gradcam: bool = True) -> Dict[str, Any]:
-        """Wykonaj predykcję na obrazie"""
+        """Perform prediction on an image and optionally generate Grad-CAM heatmap"""
         if not self.model:
             if not self.load_model():
                 raise RuntimeError("No model available. Train first or load existing model.")
@@ -370,7 +370,7 @@ class MLClassificationService:
         if self.model is None:
             raise RuntimeError("Model is not initialized")
         
-        # Konwertuj do RGB
+        # Convert to RGB
         if len(image.shape) == 2:
             image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
         else:
@@ -414,7 +414,7 @@ class MLClassificationService:
         alpha: float = 0.4,
         colormap: int = cv2.COLORMAP_JET
     ) -> np.ndarray:
-        """Stwórz overlay obrazu z heatmapą Grad-CAM"""
+        """Create an overlay of the image with the Grad-CAM heatmap"""
         heatmap_uint8 = np.uint8(255 * heatmap)
         heatmap_colored = cv2.applyColorMap(np.ascontiguousarray(heatmap_uint8, dtype=np.uint8), colormap)
         
@@ -426,7 +426,7 @@ class MLClassificationService:
         return overlay
     
     def get_model_info(self) -> Dict[str, Any]:
-        """Pobierz informacje o modelu"""
+        """Get information about the model and training status"""
         info = {
             "model_loaded": self.model is not None,
             "device": str(self.device),
@@ -447,7 +447,7 @@ class MLClassificationService:
 _service_instance = None
 
 def get_ml_service() -> MLClassificationService:
-    """Pobierz singleton MLClassificationService"""
+    """Get the singleton MLClassificationService instance"""
     global _service_instance
     if _service_instance is None:
         _service_instance = MLClassificationService()

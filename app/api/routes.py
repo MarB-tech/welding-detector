@@ -34,7 +34,6 @@ from app.api.models import (
 logger = logging.getLogger(__name__)
 
 camera_router = APIRouter(prefix="/camera", tags=["Camera"])
-edge_router = APIRouter(prefix="/edge", tags=["Edge Detection"])
 recording_router = APIRouter(prefix="/recording", tags=["Recording"])
 labeling_router = APIRouter(prefix="/labeling", tags=["Labeling"])
 ml_router = APIRouter(prefix="/ml", tags=["Machine Learning"])
@@ -94,7 +93,7 @@ async def update_settings(req: CameraSettingsRequest, camera: CameraService = De
 
 @camera_router.post("/start")
 async def start_camera(camera: CameraService = Depends(get_camera_service)):
-    """Włącz kamerę"""
+    """Turn on the camera"""
     if camera._running:
         return {"status": "already_running", "running": True}
     
@@ -104,7 +103,7 @@ async def start_camera(camera: CameraService = Depends(get_camera_service)):
 
 @camera_router.post("/stop")
 async def stop_camera(camera: CameraService = Depends(get_camera_service)):
-    """Wyłącz kamerę"""
+    """Turn off the camera"""
     if not camera._running:
         return {"status": "already_stopped", "running": False}
     
@@ -120,15 +119,8 @@ async def stop_camera(camera: CameraService = Depends(get_camera_service)):
 
 @camera_router.get("/running")
 async def get_camera_status(camera: CameraService = Depends(get_camera_service)):
-    """Sprawdź czy kamera jest włączona"""
+    """Check if the camera is running"""
     return {"running": camera._running}
-
-
-# ============== EDGE ==============
-
-@edge_router.get("/detect")
-async def detect_edge():
-    return {"status": "not_implemented"}
 
 
 # ============== RECORDING ==============
@@ -203,7 +195,7 @@ async def get_video_info(
     camera: CameraService = Depends(get_camera_service),
     extractor: FrameExtractorService = Depends(get_frame_extractor_service)
 ):
-    """Pobiera informacje o pliku wideo (liczba klatek, fps, rozdzielczość)."""
+    """Get information about a video file (number of frames, fps, resolution)."""
     path = camera.get_recording_path(filename)
     if not path:
         raise HTTPException(404, "File not found")
@@ -223,17 +215,17 @@ async def extract_frames(
     extractor: FrameExtractorService = Depends(get_frame_extractor_service)
 ):
     """
-    Ekstrahuje klatki z nagrania i zapisuje jako JPEG.
+    Extract frames from a video and save them as JPEG.
     
-    - step: co która klatka (1 = każda, 2 = co druga, itd.)
-    - max_frames: limit klatek do wyekstrahowania
-    - output_folder: folder docelowy (domyślnie: frames/{filename}/)
+    - step: which frame to extract (1 = every frame, 2 = every second frame, etc.)
+    - max_frames: limit the number of frames to extract
+    - output_folder: target folder (default: frames/{filename}/)
     """
     path = camera.get_recording_path(filename)
     if not path:
         raise HTTPException(404, "File not found")
     
-    # Ustal folder docelowy
+    # Determine target folder
     base_name = Path(filename).stem
     output_folder = req.output_folder or f"frames/{base_name}"
     
@@ -261,7 +253,7 @@ async def extract_frames(
 async def get_single_frame(
     filename: str,
     frame_index: int,
-    # Preset (szybki wybór)
+    # Preset (quick selection)
     preset: Optional[EnhancementPresetEnum] = Query(None, description="Preset: original, weld_enhance, high_contrast, edge_overlay, heatmap, denoise"),
     # Ręczne parametry (nadpisują preset)
     clahe: Optional[float] = Query(None, description="CLAHE clip_limit (1.0-4.0)"),
@@ -276,20 +268,20 @@ async def get_single_frame(
     enhancer: ImageEnhancementService = Depends(get_enhancement_service)
 ):
     """
-    Pobiera pojedynczą klatkę z nagrania jako JPEG z opcjonalnym przetwarzaniem.
+    Get a single frame from a video as JPEG with optional processing.
     
-    **Presety:**
-    - `original` - bez zmian
-    - `weld_enhance` - najlepszy dla spawów (CLAHE + sharpen + denoise)
-    - `high_contrast` - mocny kontrast
-    - `edge_overlay` - kolorowe krawędzie spawu
-    - `heatmap` - pseudokolory
-    - `denoise` - redukcja szumu
+    **Presets:**
+    - `original` - no changes
+    - `weld_enhance` - best for welds (CLAHE + sharpen + denoise)
+    - `high_contrast` - strong contrast
+    - `edge_overlay` - colored weld edges
+    - `heatmap` - pseudocolors
+    - `denoise` - noise reduction
     
-    **Przykłady:**
-    - `/frame/100?preset=weld_enhance` - użyj presetu
-    - `/frame/100?clahe=2.5&sharpen=1.5` - ręczne parametry
-    - `/frame/100?preset=weld_enhance&gamma=1.3` - preset + dostrojenie
+    **Examples:**
+    - `/frame/100?preset=weld_enhance` - use preset
+    - `/frame/100?clahe=2.5&sharpen=1.5` - manual parameters
+    - `/frame/100?preset=weld_enhance&gamma=1.3` - preset + adjustment
     """
     path = camera.get_recording_path(filename)
     if not path:
@@ -313,17 +305,17 @@ async def get_single_frame(
         if not ret:
             raise HTTPException(500, "Cannot read frame")
         
-        # Zastosuj przetwarzanie obrazu
+        # Apply image processing
         has_custom_params = any([clahe, sharpen, gamma, contrast, brightness, denoise, edges, heatmap])
         
         if preset or has_custom_params:
-            # Zacznij od presetu lub pustych parametrów
+            # Start with preset or empty parameters
             if preset:
                 params = enhancer.get_preset_params(EnhancementPreset(preset.value))
             else:
                 params = EnhancementParams()
             
-            # Nadpisz ręcznymi parametrami
+            # Override with manual parameters
             if clahe is not None:
                 params.clahe_enabled = True
                 params.clahe_clip_limit = clahe
@@ -363,7 +355,7 @@ async def get_single_frame(
 
 @recording_router.get("/enhancement/presets", response_model=EnhancementPresetsResponse)
 async def list_enhancement_presets(enhancer: ImageEnhancementService = Depends(get_enhancement_service)):
-    """Zwraca listę dostępnych presetów i opcji przetwarzania obrazu."""
+    """Return a list of available presets and image processing options."""
     return EnhancementPresetsResponse(
         presets=enhancer.list_presets(),
         colormaps=list(enhancer.list_colormaps().keys()),
@@ -382,10 +374,9 @@ async def detect_motion(
     motion: MotionDetectionService = Depends(get_motion_detection_service)
 ):
     """
-    Analizuje nagranie i wykrywa segmenty z ruchem kamery/obiektu.
-    
-    - threshold: próg różnicy pikseli (0-255), wyższy = mniej czuły
-    - min_area_percent: minimalny % powierzchni ze zmianą
+    Analyze a recording and detect segments with camera/object motion.
+    - threshold: pixel difference threshold (0-255), higher = less sensitive
+    - min_area_percent: minimum % of area with changes to count as motion (0.1-100)
     """
     path = camera.get_recording_path(filename)
     if not path:
@@ -419,15 +410,14 @@ async def trim_to_motion(
     motion: MotionDetectionService = Depends(get_motion_detection_service)
 ):
     """
-    Przycina nagranie do segmentów z wykrytym ruchem.
-    
-    Tworzy nowy plik zawierający tylko fragmenty z ruchem kamery.
+    Trim a recording to segments with detected motion.
+    Creates a new file containing only the segments with camera motion.
     """
     path = camera.get_recording_path(filename)
     if not path:
         raise HTTPException(404, "File not found")
     
-    # Ustal ścieżkę wyjściową
+    # Determine the output path
     output_path = None
     if req.output_filename:
         output_path = path.parent / req.output_filename
@@ -448,23 +438,23 @@ async def trim_to_motion(
 @recording_router.post("/{filename}/trim-to-postprocessing")
 async def trim_to_postprocessing(
     filename: str,
-    output_filename: Optional[str] = Query(None, description="Nazwa pliku wyjściowego"),
-    brightness_threshold: int = Query(150, ge=100, le=255, description="Próg jasności dla detekcji spawania"),
-    min_bright_percent: float = Query(2.0, ge=0.5, le=20.0, description="Minimalny % jasnych pikseli"),
+    output_filename: Optional[str] = Query(None, description="Output file name"),
+    brightness_threshold: int = Query(150, ge=100, le=255, description="Brightness threshold for welding detection"),
+    min_bright_percent: float = Query(2.0, ge=0.5, le=20.0, description="Minimum % of bright pixels to detect welding"),
     camera: CameraService = Depends(get_camera_service),
     motion: MotionDetectionService = Depends(get_motion_detection_service)
 ):
     """
-    Przycina wideo usuwając proces spawania (jasne światło lasera).
-    Zostawia tylko post-processing - fragment po spawaniu.
+    Trim a video by removing the welding process (bright laser light).
+    Keeps only the post-processing - the segment after welding.
     
-    Wykrywa moment spawania na podstawie jasności obrazu (laser = jasne światło).
+    Detects the welding moment based on image brightness (laser = bright light).
     """
     path = camera.get_recording_path(filename)
     if not path:
         raise HTTPException(404, "File not found")
     
-    # Ustal ścieżkę wyjściową
+    # Determine the output path
     output_path = None
     if output_filename:
         output_path = path.parent / output_filename
@@ -494,10 +484,10 @@ async def add_label(
     labeling: LabelingService = Depends(get_labeling_service)
 ):
     """
-    Dodaje etykietę OK/NOK/SKIP do klatki.
+    Adds a label OK/NOK/SKIP to a frame.
     
-    Automatycznie zapisuje klatkę do folderu treningowego (labels/training_data/ok lub nok).
-    Dla NOK można podać defect_type określający typ wady.
+    Automatically saves the frame to the training folder (labels/training_data/ok or nok).
+    For NOK, you can provide a defect_type specifying the type of defect.
     """
     path = camera.get_recording_path(filename)
     if not path:
@@ -530,7 +520,7 @@ async def get_label(
     frame_index: int,
     labeling: LabelingService = Depends(get_labeling_service)
 ):
-    """Pobiera etykietę dla klatki (lub null jeśli nie ma)."""
+    """Retrieves the label for a frame (or null if none exists)."""
     label = labeling.get_label(filename, frame_index)
     if not label:
         return None
@@ -550,7 +540,7 @@ async def remove_label(
     frame_index: int,
     labeling: LabelingService = Depends(get_labeling_service)
 ):
-    """Usuwa etykietę z klatki."""
+    """Removes a label from a frame."""
     if labeling.remove_label(filename, frame_index):
         return {"status": "deleted"}
     raise HTTPException(404, "Label not found")
@@ -561,7 +551,7 @@ async def get_video_labels(
     filename: str,
     labeling: LabelingService = Depends(get_labeling_service)
 ):
-    """Pobiera wszystkie etykiety dla danego wideo."""
+    """Retrieves all labels for a given video."""
     labels = labeling.get_labels_for_video(filename)
     return {
         "filename": filename,
@@ -581,7 +571,7 @@ async def get_video_labels(
 
 @labeling_router.get("/stats", response_model=LabelingStatsResponse)
 async def get_labeling_stats(labeling: LabelingService = Depends(get_labeling_service)):
-    """Zwraca statystyki etykietowania."""
+    """Returns labeling statistics."""
     stats = labeling.get_stats()
     return LabelingStatsResponse(
         total_labeled=stats.total_labeled,
@@ -595,13 +585,13 @@ async def get_labeling_stats(labeling: LabelingService = Depends(get_labeling_se
 
 @labeling_router.get("/training-data", response_model=TrainingDataResponse)
 async def get_training_data_info(labeling: LabelingService = Depends(get_labeling_service)):
-    """Zwraca informacje o danych treningowych."""
+    """Returns information about the training data."""
     return TrainingDataResponse(**labeling.export_for_training())
 
 
 # ============== ML CLASSIFICATION ==============
 
-# Zmienna do śledzenia statusu treningu
+# Variable to track training status across requests (since training runs in background)
 _training_status = {
     "in_progress": False,
     "progress": 0,
@@ -614,7 +604,7 @@ _training_status = {
 
 @ml_router.get("/info")
 async def get_ml_info(ml: MLClassificationService = Depends(get_ml_service)):
-    """Informacje o modelu ML i statusie."""
+    """Returns information about the ML model and its status."""
     info = ml.get_model_info()
     info["training_status"] = _training_status
     info["training_data_stats"] = ml.get_training_data_stats()
@@ -630,15 +620,15 @@ async def train_model(
     ml: MLClassificationService = Depends(get_ml_service)
 ):
     """
-    Rozpocznij trening modelu w tle.
-    Wymaga minimum 20 próbek OK i 20 próbek NOK.
+    Starts model training in the background.
+    Requires a minimum of 20 OK samples and 20 NOK samples.
     """
     global _training_status
     
     if _training_status["in_progress"]:
         raise HTTPException(400, "Training already in progress")
     
-    # Sprawdź dane treningowe
+    # Check training data
     stats = ml.get_training_data_stats()
     if not stats["ready_for_training"]:
         raise HTTPException(
@@ -657,7 +647,7 @@ async def train_model(
         "error": None
     }
     
-    # Trenuj w tle
+    # training runs in the background to avoid blocking the API
     def train_in_background():
         global _training_status
         try:
@@ -699,16 +689,16 @@ async def predict_frame(
     ml: MLClassificationService = Depends(get_ml_service)
 ):
     """
-    Klasyfikuj klatkę wideo jako OK/NOK.
-    Zwraca predykcję, pewność i opcjonalnie Grad-CAM.
+    Classifies a video frame as OK/NOK.
+    Returns the prediction, confidence, and optionally Grad-CAM.
     """
     try:
-        # Pobierz klatkę
+        # Retrieve the frame
         frame = extractor.get_frame(filename, frame_index)
         if frame is None:
             raise HTTPException(404, "Frame not found")
         
-        # Predykcja
+        # Prediction with optional Grad-CAM
         result = ml.predict(frame, with_gradcam=with_gradcam)
         
         return {
@@ -734,34 +724,34 @@ async def get_gradcam_overlay(
     ml: MLClassificationService = Depends(get_ml_service)
 ):
     """
-    Pobierz obraz z nałożoną heatmapą Grad-CAM.
-    Pokazuje obszary, na które model zwraca uwagę.
+    Get an image with the Grad-CAM heatmap overlay.
+    Shows the areas the model focuses on.
     """
     import cv2
     
     try:
-        # Pobierz klatkę
+        # Retrieve the frame
         frame = extractor.get_frame(filename, frame_index)
         if frame is None:
             raise HTTPException(404, "Frame not found")
         
-        # Predykcja z Grad-CAM
+        # Prediction with Grad-CAM
         result = ml.predict(frame, with_gradcam=True)
         
         if result["gradcam_heatmap"] is None:
             raise HTTPException(400, "Grad-CAM not available")
         
-        # Stwórz overlay
+        # Create overlay
         overlay = ml.create_gradcam_overlay(frame, result["gradcam_heatmap"], alpha=alpha)
         
-        # Dodaj tekst z predykcją
+        # Add prediction text
         label = result["prediction"].upper()
         confidence = result["confidence"]
         color = (0, 255, 0) if label == "OK" else (0, 0, 255)
         cv2.putText(overlay, f"{label}: {confidence}%", (10, 30), 
                    cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
         
-        # Enkoduj do JPEG
+        # Encode to JPEG
         _, buffer = cv2.imencode('.jpg', overlay, [cv2.IMWRITE_JPEG_QUALITY, 90])
         
         return Response(
@@ -780,7 +770,7 @@ async def load_model(
     model_name: str = Query("best_model.pth", description="Model filename"),
     ml: MLClassificationService = Depends(get_ml_service)
 ):
-    """Wczytaj zapisany model."""
+    """Load a saved model."""
     if ml.load_model(model_name):
         return {"status": "loaded", "model": model_name}
     raise HTTPException(404, f"Model not found: {model_name}")
@@ -791,7 +781,7 @@ async def export_onnx_model(
     filename: str = Query("model.onnx"),
     ml: MLClassificationService = Depends(get_ml_service)
 ):
-    """Eksportuj model do formatu ONNX dla szybszego inference."""
+    """Export the model to ONNX format for faster inference."""
     raise HTTPException(501, "ONNX export not implemented yet")
 
 
@@ -809,7 +799,7 @@ _defect_training_status = {
 
 @defect_router.get("/info")
 async def get_defect_info(defect: DefectClassifierService = Depends(get_defect_classifier_service)):
-    """Informacje o modelu klasyfikacji defektów."""
+    """Get information about the defect classification model."""
     info = defect.get_model_info()
     info["training_status"] = _defect_training_status
     info["training_data_stats"] = defect.get_training_data_stats()
@@ -825,8 +815,8 @@ async def train_defect_classifier(
     defect: DefectClassifierService = Depends(get_defect_classifier_service)
 ):
     """
-    Trenuj model klasyfikacji typów defektów w tle.
-    Wymaga minimum 10 próbek każdego typu i 50 próbek łącznie.
+    Train the defect classification model in the background.
+    Requires a minimum of 10 samples per class and 50 samples in total.
     """
     global _defect_training_status
     
@@ -879,7 +869,7 @@ async def predict_defect_type(
     extractor: FrameExtractorService = Depends(get_frame_extractor_service),
     defect: DefectClassifierService = Depends(get_defect_classifier_service)
 ):
-    """Klasyfikuj typ defektu dla konkretnej klatki."""
+    """Classify the defect type for a specific frame."""
     try:
         frame = extractor.get_frame(filename, frame_index)
         if frame is None:
@@ -901,7 +891,7 @@ async def get_defect_gradcam(
     extractor: FrameExtractorService = Depends(get_frame_extractor_service),
     defect: DefectClassifierService = Depends(get_defect_classifier_service)
 ):
-    """Grad-CAM dla klasyfikacji typu defektu."""
+    """Get Grad-CAM for defect type classification."""
     try:
         frame = extractor.get_frame(filename, frame_index)
         if frame is None:
@@ -939,13 +929,13 @@ _video_analysis_status = {}  # filename -> status dict
 async def analyze_video(
     filename: str,
     background_tasks: BackgroundTasks,
-    skip_frames: int = Query(1, ge=1, le=10, description="Analizuj co N-tą klatkę"),
-    analyze_defects: bool = Query(True, description="Czy klasyfikować typy defektów"),
+    skip_frames: int = Query(1, ge=1, le=10, description="Analyze every N-th frame"),
+    analyze_defects: bool = Query(True, description="Whether to classify defect types"),
     analysis: VideoAnalysisService = Depends(get_video_analysis_service)
 ):
     """
-    Analizuje całe wideo klatka po klatce: OK/NOK + typ defektu.
-    Wykonuje się w tle, zwraca natychmiastowy status.
+    Analyze the entire video frame by frame: OK/NOK + defect type.
+    Runs in the background, returns immediate status.
     """
     global _video_analysis_status
     
@@ -995,7 +985,7 @@ async def analyze_video(
 
 @ml_router.get("/analyze-video/{filename}/status")
 async def get_analysis_status(filename: str):
-    """Pobierz status analizy wideo"""
+    """Get the status of video analysis"""
     if filename not in _video_analysis_status:
         return {"status": "not_started"}
     
@@ -1028,7 +1018,7 @@ async def get_analysis_results(
     filename: str,
     analysis: VideoAnalysisService = Depends(get_video_analysis_service)
 ):
-    """Pobierz wyniki analizy wideo"""
+    """Get video analysis results"""
     results = analysis.get_analysis_results(filename)
     if not results:
         raise HTTPException(404, "Analysis results not found")
@@ -1039,10 +1029,10 @@ async def get_analysis_results(
 @ml_router.get("/analyze-video/{filename}/defect-frames")
 async def get_defect_frames(
     filename: str,
-    defect_type: Optional[str] = Query(None, description="Filtruj po typie defektu"),
+    defect_type: Optional[str] = Query(None, description="Filter by defect type"),
     analysis: VideoAnalysisService = Depends(get_video_analysis_service)
 ):
-    """Pobierz listę klatek z defektami"""
+    """Get a list of frames with defects"""
     frames = analysis.get_defect_frames(filename, defect_type)
     return {
         "filename": filename,

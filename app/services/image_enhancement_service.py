@@ -1,8 +1,7 @@
 """
-Image Enhancement Service - filtry do poprawy widoczności spawów.
-
-Presety i ręczne parametry do wyostrzania, poprawy kontrastu
-i wizualizacji zimnych spawów na obrazach.
+Image Enhancement Service - filter for improving weld visibility on frames.
+Presets and manual parameters for sharpening, contrast enhancement,
+and visualization of cold welds on images.
 """
 
 import cv2  # type: ignore
@@ -16,72 +15,72 @@ logger = logging.getLogger(__name__)
 
 
 class EnhancementPreset(str, Enum):
-    """Gotowe presety dla różnych zastosowań."""
-    ORIGINAL = "original"           # Bez zmian
-    WELD_ENHANCE = "weld_enhance"   # Najlepszy dla spawów - CLAHE + sharpen
-    HIGH_CONTRAST = "high_contrast" # Mocny kontrast
-    EDGE_OVERLAY = "edge_overlay"   # Krawędzie spawu kolorowo
-    HEATMAP = "heatmap"             # Pseudokolory
-    DENOISE = "denoise"             # Redukcja szumu + delikatne wyostrzenie
+    """Presets for image enhancement."""
+    ORIGINAL = "original"           # No changes
+    WELD_ENHANCE = "weld_enhance"   # Best for welds - CLAHE + sharpen
+    HIGH_CONTRAST = "high_contrast" # Strong contrast
+    EDGE_OVERLAY = "edge_overlay"   # Weld edges in color
+    HEATMAP = "heatmap"             # Pseudocolors
+    DENOISE = "denoise"             # Noise reduction + slight sharpening
 
 
 @dataclass
 class EnhancementParams:
-    """Parametry przetwarzania obrazu."""
+    """Image enhancement parameters."""
     # CLAHE (Contrast Limited Adaptive Histogram Equalization)
     clahe_enabled: bool = False
-    clahe_clip_limit: float = 2.0      # 1.0-4.0, wyższe = więcej kontrastu
-    clahe_grid_size: int = 8           # Rozmiar siatki (8x8)
+    clahe_clip_limit: float = 2.0      # 1.0-4.0, higher = more contrast
+    clahe_grid_size: int = 8           # Grid size (8x8)
     
     # Sharpening (wyostrzanie)
     sharpen_enabled: bool = False
-    sharpen_amount: float = 1.0        # 0.5-3.0, siła wyostrzania
+    sharpen_amount: float = 1.0        # 0.5-3.0, sharpening strength
     
     # Unsharp Mask
     unsharp_enabled: bool = False
-    unsharp_amount: float = 1.5        # Siła efektu
-    unsharp_radius: float = 1.0        # Promień rozmycia
+    unsharp_amount: float = 1.5        # Effect strength
+    unsharp_radius: float = 1.0        # Blur radius
     
     # Gamma correction
     gamma_enabled: bool = False
-    gamma_value: float = 1.0           # <1 ciemniej, >1 jaśniej
+    gamma_value: float = 1.0           # <1 darker, >1 brighter
     
     # Contrast/Brightness
     contrast_enabled: bool = False
-    contrast_alpha: float = 1.0        # Kontrast (1.0-3.0)
-    contrast_beta: int = 0             # Jasność (-100 do 100)
+    contrast_alpha: float = 1.0        # Contrast (1.0-3.0)
+    contrast_beta: int = 0             # Brightness (-100 to 100)
     
     # Denoise (bilateral filter)
     denoise_enabled: bool = False
-    denoise_strength: int = 9          # Siła filtra (5-15)
+    denoise_strength: int = 9          # Filter strength (5-15)
     
     # Edge detection overlay
     edge_overlay_enabled: bool = False
-    edge_color: tuple = (0, 255, 0)    # Kolor krawędzi (BGR - zielony)
+    edge_color: tuple = (0, 255, 0)    # Edge color (BGR - green)
     edge_threshold1: int = 50
     edge_threshold2: int = 150
     
-    # Heatmap (pseudokolory)
+    # Heatmap (pseudocolors based on intensity)
     heatmap_enabled: bool = False
     heatmap_colormap: int = cv2.COLORMAP_JET
 
 
 class ImageEnhancementService:
     """
-    Serwis do przetwarzania obrazów w celu poprawy widoczności spawów.
+    Service for processing images to improve weld visibility.
     
-    Użycie:
+    Usage:
         service = ImageEnhancementService()
         
-        # Użyj presetu
+        # Use a preset
         enhanced = service.apply_preset(frame, EnhancementPreset.WELD_ENHANCE)
         
-        # Lub ręczne parametry
+        # Or manual parameters
         params = EnhancementParams(clahe_enabled=True, sharpen_enabled=True)
         enhanced = service.enhance(frame, params)
     """
     
-    # Predefiniowane ustawienia presetów
+    # Predefined preset settings
     PRESETS = {
         EnhancementPreset.ORIGINAL: EnhancementParams(),
         
@@ -132,21 +131,21 @@ class ImageEnhancementService:
         logger.info("🖼️ ImageEnhancementService initialized")
     
     def apply_preset(self, frame: np.ndarray, preset: EnhancementPreset) -> np.ndarray:
-        """Aplikuje preset do obrazu."""
+        """Applies a preset to the image."""
         params = self.PRESETS.get(preset, EnhancementParams())
         return self.enhance(frame, params)
     
     def enhance(self, frame: np.ndarray, params: EnhancementParams) -> np.ndarray:
         """
-        Aplikuje filtry do obrazu zgodnie z parametrami.
+        Applies filters to the image according to the parameters.
         
-        Kolejność filtrów jest zoptymalizowana:
-        1. Denoise (najpierw redukcja szumu)
-        2. CLAHE (poprawa kontrastu)
-        3. Gamma (korekcja jasności)
+        The order of filters is optimized:
+        1. Denoise (first noise reduction)
+        2. CLAHE (contrast enhancement before sharpening)
+        3. Gamma (brightness correction before contrast)
         4. Contrast/Brightness
-        5. Sharpen/Unsharp (wyostrzanie na końcu)
-        6. Edge overlay / Heatmap (efekty wizualne)
+        5. Sharpen/Unsharp (sharpening at the end)
+        6. Edge overlay / Heatmap (visual effects at the end)
         """
         result = frame.copy()
         
@@ -172,14 +171,14 @@ class ImageEnhancementService:
         elif params.unsharp_enabled:
             result = self._apply_unsharp_mask(result, params.unsharp_amount, params.unsharp_radius)
         
-        # 6. Edge overlay (nakłada krawędzie na obraz)
+        # 6. Edge overlay (overlays edges on the image)
         if params.edge_overlay_enabled:
             result = self._apply_edge_overlay(
                 result, params.edge_color, 
                 params.edge_threshold1, params.edge_threshold2
             )
         
-        # 7. Heatmap (zamienia na pseudokolory)
+        # 7. Heatmap (converts to pseudocolors)
         if params.heatmap_enabled:
             result = self._apply_heatmap(result, params.heatmap_colormap)
         
@@ -187,7 +186,7 @@ class ImageEnhancementService:
     
     def _apply_clahe(self, frame: np.ndarray, clip_limit: float, grid_size: int) -> np.ndarray:
         """CLAHE - Contrast Limited Adaptive Histogram Equalization."""
-        # Konwertuj do LAB (lepsze dla CLAHE niż bezpośrednio na BGR)
+        # Convert to LAB (better for CLAHE than directly on BGR)
         lab = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)
         l, a, b = cv2.split(lab)
         
@@ -199,14 +198,14 @@ class ImageEnhancementService:
     
     def _apply_sharpen(self, frame: np.ndarray, amount: float) -> np.ndarray:
         """Sharpening kernel."""
-        # Kernel wyostrzający
+        # Sharpening kernel - standard unsharp mask
         kernel = np.array([
             [0, -1, 0],
             [-1, 4 + amount, -1],
             [0, -1, 0]
         ]) / amount
         
-        # Bardziej agresywny kernel dla silniejszego efektu
+        # More aggressive kernel for stronger effect
         if amount > 1.5:
             kernel = np.array([
                 [-1, -1, -1],
@@ -217,7 +216,7 @@ class ImageEnhancementService:
         return cv2.filter2D(frame, -1, kernel)
     
     def _apply_unsharp_mask(self, frame: np.ndarray, amount: float, radius: float) -> np.ndarray:
-        """Unsharp mask - klasyczne wyostrzanie."""
+        """Unsharp mask - classic sharpening."""
         blurred = cv2.GaussianBlur(frame, (0, 0), radius)
         return cv2.addWeighted(frame, 1 + amount, blurred, -amount, 0)
     
@@ -233,7 +232,7 @@ class ImageEnhancementService:
         return cv2.convertScaleAbs(frame, alpha=alpha, beta=beta)
     
     def _apply_denoise(self, frame: np.ndarray, strength: int) -> np.ndarray:
-        """Bilateral filter - redukuje szum zachowując krawędzie."""
+        """Bilateral filter - reduces noise while preserving edges."""
         return cv2.bilateralFilter(frame, strength, strength * 10, strength * 10)
     
     def _apply_edge_overlay(
@@ -243,34 +242,34 @@ class ImageEnhancementService:
         threshold1: int, 
         threshold2: int
     ) -> np.ndarray:
-        """Nakłada wykryte krawędzie kolorowo na obraz."""
+        """Overlays detected edges in color on the image."""
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         edges = cv2.Canny(gray, threshold1, threshold2)
         
-        # Stwórz kolorową maskę krawędzi
+        # Create a colored edge mask
         edge_colored = np.zeros_like(frame)
         edge_colored[edges > 0] = color
         
-        # Nałóż na oryginał
+        # Overlay on the original
         return cv2.addWeighted(frame, 1, edge_colored, 0.7, 0)
     
     def _apply_heatmap(self, frame: np.ndarray, colormap: int) -> np.ndarray:
-        """Konwertuje na pseudokolory (heatmap)."""
+        """Converts to pseudocolors (heatmap)."""
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         return cv2.applyColorMap(gray, colormap)
     
     def get_preset_params(self, preset: EnhancementPreset) -> EnhancementParams:
-        """Zwraca parametry presetu (do modyfikacji)."""
+        """Returns the parameters for a given preset (modifiable)."""
         return self.PRESETS.get(preset, EnhancementParams())
     
     @staticmethod
     def list_presets() -> list[str]:
-        """Lista dostępnych presetów."""
+        """List of available presets."""
         return [p.value for p in EnhancementPreset]
     
     @staticmethod
     def list_colormaps() -> dict[str, int]:
-        """Lista dostępnych colormap dla heatmap."""
+        """List of available colormaps for heatmap."""
         return {
             "jet": cv2.COLORMAP_JET,
             "hot": cv2.COLORMAP_HOT,
