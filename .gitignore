@@ -165,3 +165,8 @@ cython_debug/
 *.png
 *.gif
 *.mp4
+
+# Ignore model files
+models/defects/*.pth
+models/defects/training_info.json
+*.json
