@@ -6,6 +6,7 @@ from typing import Optional
 from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse, Response
+from app.config.settings import settings
 
 from app.services.camera_service import CameraService, get_camera_service
 from app.services.frame_overlay_service import FrameOverlayService, get_overlay_service
@@ -93,7 +94,7 @@ async def delete_recording(filename: str, camera: CameraService = Depends(get_ca
 @router.put("/{filename}/note")
 async def set_recording_note(
     filename: str,
-    note: str = Query("", max_length=500),
+    note: str = Query("", max_length=settings.API_NOTE_MAX_LENGTH),
     camera: CameraService = Depends(get_camera_service)
 ):
     if not camera.set_note(filename, note):
@@ -274,8 +275,8 @@ async def list_enhancement_presets(enhancer: ImageEnhancementService = Depends(g
 @router.get("/{filename}/detect-motion", response_model=MotionAnalysisResponse)
 async def detect_motion(
     filename: str,
-    threshold: int = 25,
-    min_area_percent: float = 0.5,
+    threshold: int = settings.MOTION_THRESHOLD_DEFAULT,
+    min_area_percent: float = settings.MOTION_MIN_AREA_PERCENT,
     camera: CameraService = Depends(get_camera_service),
     motion: MotionDetectionService = Depends(get_motion_detection_service)
 ):
@@ -337,8 +338,12 @@ async def trim_to_motion(
 async def trim_to_postprocessing(
     filename: str,
     output_filename: Optional[str] = Query(None),
-    brightness_threshold: int = Query(150, ge=100, le=255),
-    min_bright_percent: float = Query(2.0, ge=0.5, le=20.0),
+    brightness_threshold: int = Query(settings.BRIGHTNESS_THRESHOLD_WELD, 
+                                     ge=settings.BRIGHTNESS_THRESHOLD_MIN, 
+                                     le=settings.BRIGHTNESS_THRESHOLD_MAX),
+    min_bright_percent: float = Query(settings.MIN_BRIGHT_PERCENT_WELD, 
+                                     ge=settings.MIN_BRIGHT_PERCENT_MIN, 
+                                     le=settings.MIN_BRIGHT_PERCENT_MAX),
     camera: CameraService = Depends(get_camera_service),
     motion: MotionDetectionService = Depends(get_motion_detection_service)
 ):

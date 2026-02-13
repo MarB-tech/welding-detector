@@ -7,6 +7,7 @@ from fastapi.responses import Response
 from app.services.camera_service import CameraService, get_camera_service
 from app.services.frame_extractor_service import FrameExtractorService, get_frame_extractor_service
 from app.services.defect_classifier_service import DefectClassifierService, get_defect_classifier_service
+from app.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -35,9 +36,9 @@ async def get_defect_info(defect: DefectClassifierService = Depends(get_defect_c
 @router.post("/train")
 async def train_defect_classifier(
     background_tasks: BackgroundTasks,
-    epochs: int = Query(30, ge=10, le=100),
+    epochs: int = Query(settings.DEFECT_EPOCHS_DEFAULT, ge=settings.DEFECT_EPOCHS_MIN, le=settings.DEFECT_EPOCHS_MAX),
     batch_size: int = Query(16, ge=4, le=64),
-    learning_rate: float = Query(0.001, ge=0.00001, le=0.1),
+    learning_rate: float = Query(settings.DEFECT_LEARNING_RATE_DEFAULT, ge=settings.ML_LEARNING_RATE_MIN, le=settings.ML_LEARNING_RATE_MAX),
     defect: DefectClassifierService = Depends(get_defect_classifier_service)
 ):
     """Train defect classifier in background (requires 10+ samples per class, 50+ total)."""

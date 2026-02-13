@@ -1,6 +1,7 @@
 """Machine Learning API routes - model training, prediction, and video analysis."""
 
 import logging
+import cv2
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from fastapi.responses import Response
@@ -8,6 +9,7 @@ from fastapi.responses import Response
 from app.services.frame_extractor_service import FrameExtractorService, get_frame_extractor_service
 from app.services.ml_classification_service import MLClassificationService, get_ml_service
 from app.services.video_analysis_service import VideoAnalysisService, get_video_analysis_service
+from app.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -135,7 +137,9 @@ async def predict_frame(
 async def get_gradcam_overlay(
     filename: str,
     frame_index: int,
-    alpha: float = Query(0.4, ge=0.0, le=1.0),
+    alpha: float = Query(settings.GRADCAM_ALPHA_DEFAULT, 
+                        ge=settings.GRADCAM_ALPHA_MIN, 
+                        le=settings.GRADCAM_ALPHA_MAX),
     extractor: FrameExtractorService = Depends(get_frame_extractor_service),
     ml: MLClassificationService = Depends(get_ml_service)
 ):
@@ -156,9 +160,9 @@ async def get_gradcam_overlay(
         
         label = result["prediction"].upper()
         confidence = result["confidence"]
-        color = (0, 255, 0) if label == "OK" else (0, 0, 255)
-        cv2.putText(overlay, f"{label}: {confidence}%", (10, 30),
-                   cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
+        color = settings.COLOR_GREEN if label == "OK" else settings.COLOR_RED
+        cv2.putText(overlay, f"{label}: {confidence}%", settings.OVERLAY_PREDICTION_POS,
+                   cv2.FONT_HERSHEY_SIMPLEX, 1, color, settings.OVERLAY_THICKNESS_THICK)
         
         _, buffer = cv2.imencode('.jpg', overlay, [cv2.IMWRITE_JPEG_QUALITY, 90])
         

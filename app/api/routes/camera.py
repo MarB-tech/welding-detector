@@ -8,6 +8,7 @@ from fastapi.responses import StreamingResponse, Response
 from app.services.camera_service import CameraService, get_camera_service
 from app.services.frame_overlay_service import FrameOverlayService, get_overlay_service
 from app.api.models import CameraHealthResponse, HealthStatus, CameraSettingsRequest
+from app.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +94,7 @@ async def stop_camera(camera: CameraService = Depends(get_camera_service)):
         return {"status": "already_stopped", "running": False}
     
     camera._running = False
-    time.sleep(0.2)
+    time.sleep(settings.API_STOP_CAMERA_DELAY)
     
     if camera.cap:
         camera.cap.release()

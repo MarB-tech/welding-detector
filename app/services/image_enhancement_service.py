@@ -10,6 +10,7 @@ import logging
 from typing import Optional
 from dataclasses import dataclass
 from enum import Enum
+from app.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -29,12 +30,12 @@ class EnhancementParams:
     """Image enhancement parameters."""
     # CLAHE (Contrast Limited Adaptive Histogram Equalization)
     clahe_enabled: bool = False
-    clahe_clip_limit: float = 2.0      # 1.0-4.0, higher = more contrast
-    clahe_grid_size: int = 8           # Grid size (8x8)
+    clahe_clip_limit: float = 2.0
+    clahe_grid_size: int = 8
     
     # Sharpening
     sharpen_enabled: bool = False
-    sharpen_amount: float = 1.0        # 0.5-3.0, sharpening strength
+    sharpen_amount: float = 1.0
     
     # Unsharp Mask
     unsharp_enabled: bool = False
@@ -47,8 +48,8 @@ class EnhancementParams:
     
     # Contrast/Brightness
     contrast_enabled: bool = False
-    contrast_alpha: float = 1.0        # Contrast (1.0-3.0)
-    contrast_beta: int = 0             # Brightness (-100 to 100)
+    contrast_alpha: float = 1.0
+    contrast_beta: int = 0
     
     # Denoise (bilateral filter)
     denoise_enabled: bool = False
@@ -56,7 +57,7 @@ class EnhancementParams:
     
     # Edge detection overlay
     edge_overlay_enabled: bool = False
-    edge_color: tuple = (0, 255, 0)    # Edge color (BGR - green)
+    edge_color: tuple = (0, 255, 0)
     edge_threshold1: int = 50
     edge_threshold2: int = 150
     

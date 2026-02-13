@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Optional, Callable
+from app.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -172,20 +173,28 @@ class VideoOverlayService:
         ts_text = timestamp.strftime("%Y-%m-%d %H:%M:%S.") + f"{timestamp.microsecond // 1000:03d}"
         
         # Text shadow (better contrast)
-        cv2.putText(frame, ts_text, (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 3)
-        cv2.putText(frame, ts_text, (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
+        cv2.putText(frame, ts_text, (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 
+                   settings.OVERLAY_FONT_SCALE_MEDIUM, settings.COLOR_BLACK, settings.OVERLAY_THICKNESS_SHADOW)
+        cv2.putText(frame, ts_text, (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 
+                   settings.OVERLAY_FONT_SCALE_MEDIUM, settings.COLOR_WHITE, settings.OVERLAY_THICKNESS_THIN)
         
         # Frame number - bottom left corner
         frame_text = f"Frame: {frame_idx}"
-        cv2.putText(frame, frame_text, (10, h - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2)
-        cv2.putText(frame, frame_text, (10, h - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
+        cv2.putText(frame, frame_text, (settings.OVERLAY_FRAME_TEXT_OFFSET, h - settings.OVERLAY_FRAME_TEXT_OFFSET), 
+                   cv2.FONT_HERSHEY_SIMPLEX, settings.OVERLAY_FONT_SCALE_SMALL, 
+                   settings.COLOR_BLACK, settings.OVERLAY_THICKNESS_THICK)
+        cv2.putText(frame, frame_text, (settings.OVERLAY_FRAME_TEXT_OFFSET, h - settings.OVERLAY_FRAME_TEXT_OFFSET), 
+                   cv2.FONT_HERSHEY_SIMPLEX, settings.OVERLAY_FONT_SCALE_SMALL, 
+                   settings.COLOR_GRAY, settings.OVERLAY_THICKNESS_THIN)
         
         # Elapsed time - top right corner
         elapsed_seconds = frame_idx / fps
         elapsed_text = f"{int(elapsed_seconds // 60):02d}:{int(elapsed_seconds % 60):02d}.{int((elapsed_seconds % 1) * 10)}"
-        text_size = cv2.getTextSize(elapsed_text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 1)[0]
-        cv2.putText(frame, elapsed_text, (w - text_size[0] - 10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 3)
-        cv2.putText(frame, elapsed_text, (w - text_size[0] - 10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 1)
+        text_size = cv2.getTextSize(elapsed_text, cv2.FONT_HERSHEY_SIMPLEX, settings.OVERLAY_FONT_SCALE_MEDIUM, 1)[0]
+        cv2.putText(frame, elapsed_text, (w - text_size[0] - 10, 25), cv2.FONT_HERSHEY_SIMPLEX, 
+                   settings.OVERLAY_FONT_SCALE_MEDIUM, settings.COLOR_BLACK, settings.OVERLAY_THICKNESS_SHADOW)
+        cv2.putText(frame, elapsed_text, (w - text_size[0] - 10, 25), cv2.FONT_HERSHEY_SIMPLEX, 
+                   settings.OVERLAY_FONT_SCALE_MEDIUM, settings.COLOR_GREEN, settings.OVERLAY_THICKNESS_THIN)
         
         return frame
     

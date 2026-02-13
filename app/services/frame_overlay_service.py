@@ -1,6 +1,4 @@
-"""
-Frame Overlay Service - timestamp and recording indicator on frames.
-"""
+"""Frame Overlay Service - timestamp and recording indicator on frames."""
 
 import cv2  # type: ignore
 import numpy as np
@@ -8,6 +6,7 @@ from datetime import datetime
 from typing import Optional
 import time
 import logging
+from app.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -55,19 +54,26 @@ class FrameOverlayService:
             
             # Timestamp - top left corner
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.") + f"{datetime.now().microsecond // 1000:03d}"
-            cv2.putText(frame, timestamp, (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2)
-            cv2.putText(frame, timestamp, (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+            cv2.putText(frame, timestamp, settings.OVERLAY_TIMESTAMP_POS, cv2.FONT_HERSHEY_SIMPLEX, 
+                       settings.OVERLAY_FONT_SCALE_SMALL, settings.COLOR_BLACK, settings.OVERLAY_THICKNESS_THICK)
+            cv2.putText(frame, timestamp, settings.OVERLAY_TIMESTAMP_POS, cv2.FONT_HERSHEY_SIMPLEX, 
+                       settings.OVERLAY_FONT_SCALE_SMALL, settings.COLOR_WHITE, settings.OVERLAY_THICKNESS_THIN)
             
             # REC indicator - top right corner (blinking)
             if self._is_recording and int(time.time() * 2) % 2:
-                cv2.circle(frame, (w - 20, 20), 8, (0, 0, 255), -1)
-                cv2.putText(frame, "REC", (w - 60, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+                rec_pos = (w - settings.OVERLAY_REC_INDICATOR_OFFSET, settings.OVERLAY_REC_INDICATOR_OFFSET)
+                cv2.circle(frame, rec_pos, settings.OVERLAY_REC_INDICATOR_RADIUS, settings.COLOR_RED, -1)
+                cv2.putText(frame, "REC", (w - settings.OVERLAY_REC_TEXT_OFFSET, 25), 
+                           cv2.FONT_HERSHEY_SIMPLEX, settings.OVERLAY_FONT_SCALE_SMALL, 
+                           settings.COLOR_RED, settings.OVERLAY_THICKNESS_THICK)
                 
                 # Recording duration
                 duration = self.get_recording_duration()
                 if duration:
                     dur_text = f"{int(duration // 60):02d}:{int(duration % 60):02d}"
-                    cv2.putText(frame, dur_text, (w - 110, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+                    cv2.putText(frame, dur_text, (w - settings.OVERLAY_DURATION_OFFSET, 25), 
+                               cv2.FONT_HERSHEY_SIMPLEX, settings.OVERLAY_FONT_SCALE_SMALL, 
+                               settings.COLOR_WHITE, settings.OVERLAY_THICKNESS_THIN)
             
             # Encode - high quality for minimal loss
             _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 92])

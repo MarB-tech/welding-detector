@@ -6,6 +6,7 @@ Provides training and prediction capabilities with Grad-CAM visualization.
 
 import json
 import logging
+from app.config.settings import settings
 from pathlib import Path
 from typing import Dict, Any
 from datetime import datetime
@@ -176,7 +177,8 @@ class DefectClassifierService(MLClassificationService):
             transforms.RandomCrop(224),
             transforms.RandomHorizontalFlip() if augment else transforms.Lambda(lambda x: x),
             transforms.RandomRotation(15) if augment else transforms.Lambda(lambda x: x),
-            transforms.ColorJitter(brightness=0.3, contrast=0.3) if augment else transforms.Lambda(lambda x: x),
+            transforms.ColorJitter(brightness=settings.DEFECT_AUGMENT_BRIGHTNESS, 
+                                  contrast=settings.DEFECT_AUGMENT_CONTRAST) if augment else transforms.Lambda(lambda x: x),
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         ])
@@ -195,7 +197,9 @@ class DefectClassifierService(MLClassificationService):
         
         criterion = nn.CrossEntropyLoss()
         optimizer = torch.optim.AdamW(self.model.parameters(), lr=learning_rate)
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', patience=5, factor=0.5)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', 
+                                                               patience=settings.DEFECT_LR_SCHEDULER_PATIENCE, 
+                                                               factor=settings.DEFECT_LR_SCHEDULER_FACTOR)
         
         history = {"train_loss": [], "train_acc": [], "val_loss": [], "val_acc": [], "best_val_acc": 0, "best_epoch": 0}
         best_val_acc = 0

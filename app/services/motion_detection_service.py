@@ -10,6 +10,7 @@ import logging
 from pathlib import Path
 from typing import Optional
 from dataclasses import dataclass
+from app.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -50,10 +51,10 @@ class MotionDetectionService:
     def __init__(
         self,
         recordings_dir: Path = Path("recordings"),
-        threshold: int = 25,           # Pixel difference threshold
-        min_area_percent: float = 0.5, # Minimum % of area with changes
+        threshold: int = settings.MOTION_THRESHOLD_DEFAULT,
+        min_area_percent: float = settings.MOTION_MIN_AREA_PERCENT,
         min_segment_frames: int = 5,   # Minimum frames per segment
-        padding_frames: int = 30       # Padding before/after segment (0.5s @60fps)
+        padding_frames: int = settings.MOTION_PADDING_FRAMES
     ):
         self.recordings_dir = recordings_dir
         self.threshold = threshold
@@ -91,7 +92,7 @@ class MotionDetectionService:
         
         try:
             total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+            fps = cap.get(cv2.CAP_PROP_FPS) or settings.CAMERA_DEFAULT_FPS
             duration = total_frames / fps if fps > 0 else 0
             
             logger.info(f"Analyzing motion in {path.name} ({total_frames} frames)")
@@ -167,7 +168,7 @@ class MotionDetectionService:
         end = motion_frames[0]
         
         # Max gap between frames in a single segment (0.5s)
-        max_gap = int(fps * 0.5)
+        max_gap = int(fps * settings.MOTION_MAX_GAP_SECONDS)
         
         for frame in motion_frames[1:]:
             if frame - end <= max_gap:
@@ -284,7 +285,7 @@ class MotionDetectionService:
             raise ValueError(f"Cannot open video: {path}")
         
         try:
-            fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+            fps = cap.get(cv2.CAP_PROP_FPS) or settings.CAMERA_DEFAULT_FPS
             width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             
@@ -388,7 +389,7 @@ class MotionDetectionService:
                 # - Or intense red light (welding glow)
                 is_welding = (
                     very_bright_percent >= 1.0 or  # At least 1% very bright (active laser)
-                    red_hot_percent >= 3.0  # Or 3% intense red (welding glow) - increased from 2% to 3%
+                    red_hot_percent >= settings.RED_HOT_THRESHOLD_PERCENT
                 )
                 
                 if is_welding:
@@ -402,7 +403,7 @@ class MotionDetectionService:
             
             # Find continuous welding segment - group frames with tolerance
             # If gap > 10 frames (0.3s), consider it as end of welding
-            gap_tolerance = 10  # Reduced from 30 to 10
+            gap_tolerance = settings.GAP_TOLERANCE_FRAMES
             segments = []
             current_start = welding_frames[0]
             prev_frame = welding_frames[0]
@@ -470,7 +471,7 @@ class MotionDetectionService:
         
         try:
             total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+            fps = cap.get(cv2.CAP_PROP_FPS) or settings.CAMERA_DEFAULT_FPS
             width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             

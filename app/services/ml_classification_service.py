@@ -10,6 +10,7 @@ from typing import Optional, Dict, Any
 from datetime import datetime
 import numpy as np
 import cv2
+from app.config.settings import settings
 
 import torch
 import torch.nn as nn
@@ -165,8 +166,8 @@ class MLClassificationService:
         self,
         epochs: int = 20,
         batch_size: int = 16,
-        learning_rate: float = 0.001,
-        validation_split: float = 0.2,
+        learning_rate: float = settings.ML_LEARNING_RATE_DEFAULT,
+        validation_split: float = settings.ML_VALIDATION_SPLIT,
         augment: bool = True
     ) -> Dict[str, Any]:
         """Train the model on the collected data"""
@@ -185,7 +186,8 @@ class MLClassificationService:
             transforms.RandomCrop(224),
             transforms.RandomHorizontalFlip() if augment else transforms.Lambda(lambda x: x),
             transforms.RandomRotation(10) if augment else transforms.Lambda(lambda x: x),
-            transforms.ColorJitter(brightness=0.2, contrast=0.2) if augment else transforms.Lambda(lambda x: x),
+            transforms.ColorJitter(brightness=settings.ML_AUGMENT_BRIGHTNESS, 
+                                  contrast=settings.ML_AUGMENT_CONTRAST) if augment else transforms.Lambda(lambda x: x),
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         ])
@@ -211,7 +213,9 @@ class MLClassificationService:
         
         criterion = nn.CrossEntropyLoss()
         optimizer = optim.AdamW(self.model.parameters(), lr=learning_rate)
-        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', patience=3, factor=0.5)
+        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', 
+                                                         patience=settings.ML_LR_SCHEDULER_PATIENCE, 
+                                                         factor=settings.ML_LR_SCHEDULER_FACTOR)
         
         history = {
             "train_loss": [],

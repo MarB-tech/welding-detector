@@ -41,7 +41,7 @@ class CameraService:
         self.monochrome = False
         
         # Actual FPS measurement
-        self.actual_fps = 30.0  # Default, will be measured
+        self.actual_fps = settings.CAMERA_DEFAULT_FPS
         self._fps_samples = []
         self._last_frame_time = 0
         
@@ -109,7 +109,7 @@ class CameraService:
         if frames_captured > 10 and elapsed > 0:
             self.actual_fps = frames_captured / elapsed
             # Clamp to reasonable range
-            self.actual_fps = max(5.0, min(self.actual_fps, 120.0))
+            self.actual_fps = max(settings.CAMERA_FPS_MIN_CLAMP, min(self.actual_fps, settings.CAMERA_FPS_MAX_CLAMP))
         
         logger.info(f"Measured FPS: {self.actual_fps:.1f} ({frames_captured} frames in {elapsed:.2f}s)")
     
@@ -139,11 +139,11 @@ class CameraService:
             now = time.perf_counter()
             if self._last_frame_time > 0:
                 frame_times.append(now - self._last_frame_time)
-                if len(frame_times) > 30:
+                if len(frame_times) > settings.CAMERA_FPS_SMOOTHING_WINDOW:
                     frame_times.pop(0)
                 if len(frame_times) >= 10:
                     avg_interval = sum(frame_times) / len(frame_times)
-                    self.actual_fps = 1.0 / avg_interval if avg_interval > 0 else 30.0
+                    self.actual_fps = 1.0 / avg_interval if avg_interval > 0 else settings.CAMERA_DEFAULT_FPS
             self._last_frame_time = now
             
             if self.monochrome:
@@ -213,7 +213,7 @@ class CameraService:
         self._video_writer = cv2.VideoWriter(
             str(self._temp_recording_path), 
             cv2.VideoWriter_fourcc(*'mp4v'), #type: ignore
-            30.0, 
+            settings.CAMERA_DEFAULT_FPS, 
             (w, h)
         )
         
@@ -240,8 +240,8 @@ class CameraService:
             self._video_writer = None
         
         # Calculate real FPS based on actual recording
-        real_fps = frames / duration if duration > 0 else 30.0
-        real_fps = max(10.0, min(real_fps, 60.0))
+        real_fps = frames / duration if duration > 0 else settings.CAMERA_DEFAULT_FPS
+        real_fps = max(settings.CAMERA_MIN_FPS, min(real_fps, settings.CAMERA_MAX_FPS))
         logger.info(f"Recording stats: {frames} frames in {duration:.1f}s = {real_fps:.1f} fps")
         
         # Re-encode with correct FPS
@@ -360,7 +360,7 @@ class CameraService:
             self.jpeg_quality = jpeg_quality
             results["jpeg_quality"] = jpeg_quality
         if resolution:
-            res = {"HD": (1280, 720), "FHD": (1920, 1080)}.get(resolution.upper())
+            res = {"HD": (settings.CAMERA_USB_WIDTH, settings.CAMERA_USB_HEIGHT), "FHD": (1920, 1080)}.get(resolution.upper())
             if res and self.cap:
                 self.width, self.height = res
                 self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
