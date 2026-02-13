@@ -1,17 +1,20 @@
-# --- Dockerfile dla Frontend Vue ---
+# --- Dockerfile for Frontend Vue ---
 FROM node:20-alpine
 
 WORKDIR /app
 
-# Kopiuj package.json i zainstaluj dependencies
+# Copy package.json and install dependencies
 COPY package*.json ./
 RUN npm install
 
-# Kopiuj resztę kodu
+# Copy the rest of the code
 COPY . .
 
-# Port dla Vite dev server
+# Set environment variable for host communication
+ENV DOCKER_ENV=true
+
+# Port for Vite dev server
 EXPOSE 3000
 
-# Uruchom dev server (dostępny z zewnątrz)
+# Run dev server (accessible from outside)
 CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "3000"]
