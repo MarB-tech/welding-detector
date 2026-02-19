@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 
 @pytest.fixture(scope="session")
 def valid_jpeg_bytes() -> bytes:
-    """Generuje prawidłowy obraz JPEG 640x480."""
+    """Generate valid JPEG image 640x480."""
     frame = np.zeros((480, 640, 3), dtype=np.uint8)
     frame[:, :, 0] = np.linspace(0, 255, 640, dtype=np.uint8)
     frame[:, :, 1] = 128
@@ -27,15 +27,21 @@ def valid_jpeg_bytes() -> bytes:
 
 @pytest.fixture(scope="session")
 def small_jpeg_bytes() -> bytes:
-    """Mały obraz JPEG 100x100."""
+    """Small JPEG image 100x100."""
     frame = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
     _, buffer = cv2.imencode('.jpg', frame)
     return buffer.tobytes()
 
 
+@pytest.fixture(scope="session")
+def invalid_jpeg_bytes() -> bytes:
+    """Invalid JPEG data for error tests."""
+    return b'\xff\xd8\xff\xe0INVALID_DATA'
+
+
 @pytest.fixture(autouse=True)
 def reset_singletons():
-    """Resetuje singletony przed każdym testem."""
+    """Reset singletons before each test."""
     import app.services.frame_overlay_service as overlay_module
     import app.services.camera_service as camera_module
     
@@ -48,7 +54,7 @@ def reset_singletons():
 
 @pytest.fixture
 def temp_recordings_dir(tmp_path: Path):
-    """Tymczasowy folder na nagrania."""
+    """Temporary folder for recordings."""
     recordings = tmp_path / "recordings"
     recordings.mkdir()
     return recordings
@@ -83,6 +89,8 @@ def mock_camera_service(valid_jpeg_bytes: bytes):
     mock.list_recordings.return_value = []
     mock.get_recording_path.return_value = None
     mock.delete_recording.return_value = False
+    mock.set_note.return_value = False
+    mock.get_note.return_value = None
     return mock
 
 
@@ -98,15 +106,16 @@ def mock_overlay_service():
 
 @pytest.fixture
 def test_client(mock_camera_service, mock_overlay_service):
-    """FastAPI TestClient z mockami."""
+    """FastAPI TestClient with mocks."""
     from app.main import app
     from app.services.camera_service import get_camera_service
     from app.services.frame_overlay_service import get_overlay_service
     
-    app.dependency_overrides[get_camera_service] = lambda: mock_camera_service
-    app.dependency_overrides[get_overlay_service] = lambda: mock_overlay_service
-    
-    with TestClient(app) as client:
-        yield client
-    
-    app.dependency_overrides.clear()
+    with patch('app.main.get_camera_service', return_value=mock_camera_service):
+        app.dependency_overrides[get_camera_service] = lambda: mock_camera_service
+        app.dependency_overrides[get_overlay_service] = lambda: mock_overlay_service
+        
+        with TestClient(app) as client:
+            yield client
+        
+        app.dependency_overrides.clear()
